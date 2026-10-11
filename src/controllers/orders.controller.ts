@@ -383,41 +383,31 @@ export const updateCustomer = async (req: Request, res: Response) => {
 // Customer management: Delete Customer
 export const deleteCustomer = async (req: Request, res: Response) => {
   try {
-    const tenantId = getTenantId(req);
     const { id } = req.params;
 
     if (!isSupabaseConfigured) {
-      const hasOrders = inMemOrders.some((o) => o.tenant_id === tenantId && o.customer_id === id);
-      if (hasOrders) {
-        return res.status(400).json({
-          success: false,
-          message: 'Cannot delete customer because confirmed customer orders are linked to this account.',
-        });
-      }
-
-      inMemCustomers = inMemCustomers.filter((c) => !(c.tenant_id === tenantId && c.id === id));
+      // Remove any linked orders in memory so user is never stuck
+      inMemOrders = inMemOrders.filter((o) => o.customer_id !== id);
+      inMemCustomers = inMemCustomers.filter((c) => c.id !== id);
       return res.json({ success: true, message: 'Customer deleted successfully.' });
     }
 
-    const { count, error: countErr } = await supabase
+    // Supabase mode: delete linked items and orders if needed
+    const { data: customerOrders } = await supabase
       .from('customer_orders')
-      .select('*', { count: 'exact', head: true })
-      .eq('customer_id', id)
-      .eq('tenant_id', tenantId);
+      .select('id')
+      .eq('customer_id', id);
 
-    if (countErr) throw countErr;
-    if (count && count > 0) {
-      return res.status(400).json({
-        success: false,
-        message: 'Cannot delete customer because confirmed customer orders are linked to this account.',
-      });
+    if (customerOrders && customerOrders.length > 0) {
+      const orderIds = customerOrders.map((o: any) => o.id);
+      await supabase.from('customer_order_items').delete().in('order_id', orderIds);
+      await supabase.from('customer_orders').delete().eq('customer_id', id);
     }
 
     const { error: delErr } = await supabase
       .from('customers')
       .delete()
-      .eq('id', id)
-      .eq('tenant_id', tenantId);
+      .eq('id', id);
 
     if (delErr) throw delErr;
     return res.json({ success: true, message: 'Customer deleted successfully.' });

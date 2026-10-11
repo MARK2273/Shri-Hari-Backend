@@ -22,7 +22,7 @@ router.post('/', requireRole('factory_admin', 'supervisor'), createOrder);
 router.get('/customers', getCustomers);
 router.post('/customers', requireRole('factory_admin', 'supervisor'), createCustomer);
 router.put('/customers/:id', requireRole('factory_admin', 'supervisor'), updateCustomer);
-router.delete('/customers/:id', requireRole('factory_admin'), deleteCustomer);
+router.delete('/customers/:id', requireRole('factory_admin', 'supervisor'), deleteCustomer);
 router.post('/customers/seed-defaults', requireRole('factory_admin', 'supervisor'), seedDefaultCustomers);
 
 export default router;
