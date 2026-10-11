@@ -44,24 +44,25 @@ export const createProductionBatch = async (req: Request, res: Response) => {
     const userId = req.user?.id;
 
     const schema = z.object({
-      orderId: z.string().uuid(),
-      orderItemId: z.string().uuid(),
-      recipeId: z.string().uuid(),
-      batchNumber: z.string().min(3),
+      orderId: z.string().min(1),
+      orderItemId: z.string().min(1),
+      recipeId: z.string().min(1),
+      batchNumber: z.string().optional(),
       plannedQuantityKg: z.number().positive(),
-      operatorId: z.string().uuid().optional(),
-      supervisorId: z.string().uuid().optional(),
+      operatorId: z.string().optional(),
+      supervisorId: z.string().optional(),
       notes: z.string().optional()
     });
 
     const body = schema.parse(req.body);
+    const resolvedBatchNumber = body.batchNumber?.trim() || `PB-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}-${Math.floor(Math.random() * 900 + 100)}`;
 
     if (!isSupabaseConfigured) {
       return res.status(201).json({
         success: true,
         batch: {
           id: `pb-${Date.now()}`,
-          batch_number: body.batchNumber,
+          batch_number: resolvedBatchNumber,
           planned_quantity_kg: body.plannedQuantityKg,
           status: 'draft'
         }
@@ -88,7 +89,7 @@ export const createProductionBatch = async (req: Request, res: Response) => {
         order_item_id: body.orderItemId,
         product_id: orderItem.product_id,
         recipe_id: body.recipeId,
-        batch_number: body.batchNumber,
+        batch_number: resolvedBatchNumber,
         planned_quantity_kg: body.plannedQuantityKg,
         status: 'draft',
         operator_id: body.operatorId || userId,

@@ -43,30 +43,33 @@ export const createAndConfirmDispatch = async (req: Request, res: Response) => {
     const userId = req.user?.id;
 
     const schema = z.object({
-      orderId: z.string().uuid(),
-      deliveryNumber: z.string().min(3),
+      orderId: z.string().min(1),
+      deliveryNumber: z.string().optional(),
       destinationAddress: z.string().min(3),
       vehicleNumber: z.string().optional(),
       notes: z.string().optional(),
       items: z.array(z.object({
-        orderItemId: z.string().uuid(),
-        productId: z.string().uuid(),
+        orderItemId: z.string().min(1),
+        productId: z.string().min(1),
         quantityKg: z.number().positive(),
         // Specific finished goods batch allocations for full traceability (FG-07)
         batchAllocations: z.array(z.object({
-          finishedGoodsBatchId: z.string().uuid(),
+          finishedGoodsBatchId: z.string().min(1),
           quantityKg: z.number().positive()
         })).min(1)
       })).min(1)
     });
 
     const body = schema.parse(req.body);
+    const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+    const randSuffix = Math.floor(Math.random() * 900 + 100);
+    const generatedDeliveryNum = body.deliveryNumber || `DEL-${dateStr}-${randSuffix}`;
 
     if (!isSupabaseConfigured) {
       return res.status(201).json({
         success: true,
         message: 'Dispatch created and confirmed (mock mode)',
-        delivery_number: body.deliveryNumber
+        delivery_number: generatedDeliveryNum
       });
     }
 
@@ -120,7 +123,7 @@ export const createAndConfirmDispatch = async (req: Request, res: Response) => {
         tenant_id: tenantId,
         customer_id: order.customer_id,
         order_id: body.orderId,
-        delivery_number: body.deliveryNumber,
+        delivery_number: generatedDeliveryNum,
         destination_address: body.destinationAddress,
         vehicle_number: body.vehicleNumber,
         status: 'confirmed', // Stock is deducted upon confirmation (DEL-06)

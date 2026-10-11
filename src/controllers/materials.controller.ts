@@ -108,7 +108,7 @@ export const createMaterial = async (req: Request, res: Response) => {
   try {
     const tenantId = getTenantId(req);
     const schema = z.object({
-      code: z.string().min(2),
+      code: z.string().optional(),
       name: z.string().min(2),
       description: z.string().optional(),
       minStockLevelKg: z.number().min(0).default(100),
@@ -116,7 +116,7 @@ export const createMaterial = async (req: Request, res: Response) => {
     });
 
     const body = schema.parse(req.body);
-    const codeUpper = body.code.trim().toUpperCase();
+    const codeUpper = body.code?.trim().toUpperCase() || `MAT-${Math.floor(Math.random() * 9000 + 1000)}`;
 
     if (!isSupabaseConfigured) {
       // Check code uniqueness
@@ -429,7 +429,7 @@ export const receiveMaterialBatch = async (req: Request, res: Response) => {
     const schema = z.object({
       materialId: z.string().min(1),
       supplierId: z.string().optional().nullable(),
-      batchNumber: z.string().min(2),
+      batchNumber: z.string().optional(),
       supplierLotNumber: z.string().optional().nullable(),
       receiptDate: z.string().optional(),
       receivedQuantityKg: z.number().positive(),
@@ -438,6 +438,7 @@ export const receiveMaterialBatch = async (req: Request, res: Response) => {
     });
 
     const body = schema.parse(req.body);
+    const resolvedBatchNumber = body.batchNumber?.trim() || `MB-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}-${Math.floor(Math.random() * 900 + 100)}`;
 
     if (!isSupabaseConfigured) {
       const mat = inMemMaterials.find((m) => m.tenant_id === tenantId && m.id === body.materialId);
@@ -450,7 +451,7 @@ export const receiveMaterialBatch = async (req: Request, res: Response) => {
         tenant_id: tenantId,
         material_id: body.materialId,
         supplier_id: body.supplierId || null,
-        batch_number: body.batchNumber.trim(),
+        batch_number: resolvedBatchNumber,
         supplier_lot_number: body.supplierLotNumber?.trim() || null,
         receipt_date: body.receiptDate || new Date().toISOString().split('T')[0],
         received_quantity_kg: body.receivedQuantityKg,
@@ -473,7 +474,7 @@ export const receiveMaterialBatch = async (req: Request, res: Response) => {
         tenant_id: tenantId,
         material_id: body.materialId,
         supplier_id: body.supplierId,
-        batch_number: body.batchNumber.trim(),
+        batch_number: resolvedBatchNumber,
         supplier_lot_number: body.supplierLotNumber,
         receipt_date: body.receiptDate || new Date().toISOString().split('T')[0],
         received_quantity_kg: body.receivedQuantityKg,

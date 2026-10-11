@@ -48,7 +48,7 @@ export const createProduct = async (req: Request, res: Response) => {
     const userId = req.user?.id;
 
     const schema = z.object({
-      code: z.string().min(2),
+      code: z.string().optional(),
       name: z.string().min(2),
       description: z.string().optional(),
       unit: z.enum(['kg', 'pcs', 'rolls']).default('kg'),
@@ -56,7 +56,7 @@ export const createProduct = async (req: Request, res: Response) => {
       initialRecipe: z.object({
         notes: z.string().optional(),
         items: z.array(z.object({
-          materialId: z.string().uuid(),
+          materialId: z.string().min(1),
           percentage: z.number().min(0).max(100),
           plannedKgPerKgOutput: z.number().positive()
         })).min(1)
@@ -64,11 +64,12 @@ export const createProduct = async (req: Request, res: Response) => {
     });
 
     const body = schema.parse(req.body);
+    const generatedCode = body.code ? body.code.toUpperCase() : `PRD-${Math.floor(Math.random() * 9000 + 1000)}`;
 
     if (!isSupabaseConfigured) {
       return res.status(201).json({
         success: true,
-        product: { id: `prd-${Date.now()}`, ...body, is_active: true }
+        product: { id: `prd-${Date.now()}`, ...body, code: generatedCode, is_active: true }
       });
     }
 
@@ -77,7 +78,7 @@ export const createProduct = async (req: Request, res: Response) => {
       .from('products')
       .insert({
         tenant_id: tenantId,
-        code: body.code.toUpperCase(),
+        code: generatedCode,
         name: body.name,
         description: body.description,
         unit: body.unit,
@@ -134,7 +135,7 @@ export const addRecipeVersion = async (req: Request, res: Response) => {
     const schema = z.object({
       notes: z.string().optional(),
       items: z.array(z.object({
-        materialId: z.string().uuid(),
+        materialId: z.string().min(1),
         percentage: z.number().min(0).max(100),
         plannedKgPerKgOutput: z.number().positive()
       })).min(1)

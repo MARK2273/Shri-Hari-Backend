@@ -105,7 +105,7 @@ export const createOrder = async (req: Request, res: Response) => {
 
     const schema = z.object({
       customerId: z.string().min(1),
-      orderNumber: z.string().min(3),
+      orderNumber: z.string().optional(),
       requiredDeliveryDate: z.string(),
       notes: z.string().optional(),
       items: z
@@ -120,6 +120,7 @@ export const createOrder = async (req: Request, res: Response) => {
     });
 
     const body = schema.parse(req.body);
+    const resolvedOrderNumber = body.orderNumber?.trim() || `ORD-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}-${Math.floor(Math.random() * 900 + 100)}`;
     const totalWeight = body.items.reduce((sum, item) => sum + item.requestedQuantityKg, 0);
 
     if (!isSupabaseConfigured) {
@@ -140,7 +141,7 @@ export const createOrder = async (req: Request, res: Response) => {
         id: orderId,
         tenant_id: tenantId,
         customer_id: body.customerId,
-        order_number: body.orderNumber.trim(),
+        order_number: resolvedOrderNumber,
         order_date: new Date().toISOString().split('T')[0],
         required_delivery_date: body.requiredDeliveryDate,
         status: 'confirmed',
@@ -169,7 +170,7 @@ export const createOrder = async (req: Request, res: Response) => {
       .insert({
         tenant_id: tenantId,
         customer_id: body.customerId,
-        order_number: body.orderNumber,
+        order_number: resolvedOrderNumber,
         required_delivery_date: body.requiredDeliveryDate,
         total_requested_weight_kg: totalWeight,
         status: 'confirmed',
@@ -245,7 +246,7 @@ export const createCustomer = async (req: Request, res: Response) => {
   try {
     const tenantId = getTenantId(req);
     const schema = z.object({
-      code: z.string().min(2),
+      code: z.string().optional(),
       name: z.string().min(2),
       contactPerson: z.string().optional(),
       phone: z.string().optional(),
@@ -255,7 +256,7 @@ export const createCustomer = async (req: Request, res: Response) => {
     });
 
     const body = schema.parse(req.body);
-    const codeUpper = body.code.trim().toUpperCase();
+    const codeUpper = body.code?.trim().toUpperCase() || `CUST-${Math.floor(Math.random() * 9000 + 1000)}`;
 
     if (!isSupabaseConfigured) {
       const exists = inMemCustomers.find(
