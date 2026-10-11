@@ -12,7 +12,7 @@ export const getTenants = async (req: Request, res: Response) => {
           {
             id: '11111111-1111-1111-1111-111111111111',
             tenant_id: 'shri-hari-pack',
-            name: 'Shri Hari Packaging Factory',
+            name: 'Shri Hari Packaging',
             status: 'active',
             address: 'Plot 45, GIDC Industrial Estate, Vapi, Gujarat',
             contact_email: 'info@shriharipackaging.com',

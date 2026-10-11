@@ -40,7 +40,7 @@ export const login = async (req: Request, res: Response) => {
             full_name: 'Factory Admin',
             role: 'factory_admin',
             tenant_id: mockTenantId,
-            tenant_name: 'Shri Hari Packaging Factory'
+            tenant_name: 'Shri Hari Packaging'
           }
         });
       }
@@ -84,7 +84,7 @@ export const login = async (req: Request, res: Response) => {
             full_name: 'Factory Admin',
             role: 'factory_admin',
             tenant_id: adminTenantId,
-            tenant_name: 'Shri Hari Packaging Factory'
+            tenant_name: 'Shri Hari Packaging'
           }
         });
       }
@@ -159,7 +159,7 @@ export const getProfile = async (req: Request, res: Response) => {
         success: true,
         user: {
           ...req.user,
-          tenant_name: 'Shri Hari Packaging Factory (Dev Mode)'
+          tenant_name: 'Shri Hari Packaging (Dev Mode)'
         }
       });
     }

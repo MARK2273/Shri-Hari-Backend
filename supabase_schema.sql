@@ -498,7 +498,7 @@ DECLARE
 BEGIN
     -- 1. Insert Single Factory Tenant
     INSERT INTO tenants (tenant_id, name, status, address, contact_email, contact_phone)
-    VALUES ('shri-hari-pack', 'Shri Hari Packaging Factory', 'active', 'Plot 45, GIDC Industrial Estate, Vapi, Gujarat', 'info@shriharipackaging.com', '+91 98765 43210')
+    VALUES ('shri-hari-pack', 'Shri Hari Packaging', 'active', 'Plot 45, GIDC Industrial Estate, Vapi, Gujarat', 'info@shriharipackaging.com', '+91 98765 43210')
     RETURNING id INTO v_tenant_id;
 
     -- Tenant settings
