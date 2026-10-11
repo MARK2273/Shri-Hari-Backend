@@ -23,6 +23,7 @@ export interface MockStoreData {
   productionBatches: any[];
   fgBatches: any[];
   deliveries: any[];
+  auditLogs: any[];
 }
 
 const defaultData: MockStoreData = {
@@ -34,6 +35,7 @@ const defaultData: MockStoreData = {
   productionBatches: [],
   fgBatches: [],
   deliveries: [],
+  auditLogs: [],
 };
 
 function loadStore(): MockStoreData {
@@ -50,6 +52,7 @@ function loadStore(): MockStoreData {
         productionBatches: parsed.productionBatches || [],
         fgBatches: parsed.fgBatches || [],
         deliveries: parsed.deliveries || [],
+        auditLogs: parsed.auditLogs || [],
       };
     }
   } catch (err) {
@@ -66,4 +69,20 @@ export function saveMockStore(): void {
   } catch (err) {
     console.error('Failed to save mockData.json:', err);
   }
+}
+
+export function recordAuditLog(action: string, entityName: string, details?: any, email?: string): void {
+  const log = {
+    id: `aud-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+    action,
+    entity_name: entityName,
+    user_email: email || 'admin@shrihari.com',
+    details: details || null,
+    created_at: new Date().toISOString(),
+  };
+  mockStore.auditLogs.unshift(log);
+  if (mockStore.auditLogs.length > 200) {
+    mockStore.auditLogs.length = 200;
+  }
+  saveMockStore();
 }
