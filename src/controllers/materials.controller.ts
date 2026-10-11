@@ -34,8 +34,8 @@ interface InMemBatch {
 }
 
 // In-memory tenant stores when running without active Supabase credentials
-let inMemMaterials: InMemMaterial[] = [];
-let inMemBatches: InMemBatch[] = [];
+export let inMemMaterials: InMemMaterial[] = [];
+export let inMemBatches: InMemBatch[] = [];
 
 const getTenantId = (req: Request): string => (req.tenantId || process.env.DEFAULT_TENANT_SLUG || 'shri-hari-pack') as string;
 
