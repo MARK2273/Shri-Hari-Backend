@@ -1,14 +1,79 @@
 import { Request, Response } from 'express';
 import { supabase, isSupabaseConfigured } from '../config/supabase';
 import { z } from 'zod';
+import crypto from 'crypto';
+
+interface InMemCustomer {
+  id: string;
+  tenant_id: string;
+  code: string;
+  name: string;
+  contact_person?: string;
+  phone?: string;
+  email?: string;
+  billing_address?: string;
+  delivery_address?: string;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+interface InMemOrderItem {
+  id: string;
+  order_id: string;
+  product_id: string;
+  requested_quantity_kg: number;
+  planned_quantity_kg: number;
+  produced_quantity_kg: number;
+  dispatched_quantity_kg: number;
+  status: string;
+  notes?: string;
+}
+
+interface InMemOrder {
+  id: string;
+  tenant_id: string;
+  customer_id: string;
+  order_number: string;
+  order_date: string;
+  required_delivery_date: string;
+  status: string;
+  total_requested_weight_kg: number;
+  notes?: string;
+  created_by?: string;
+  created_at: string;
+  customer_order_items: InMemOrderItem[];
+}
+
+let inMemCustomers: InMemCustomer[] = [];
+let inMemOrders: InMemOrder[] = [];
+
+const getTenantId = (req: Request): string => (req.tenantId || process.env.DEFAULT_TENANT_SLUG || 'shri-hari-pack') as string;
 
 // List Customer Orders
 export const getOrders = async (req: Request, res: Response) => {
   try {
-    const tenantId = req.tenantId;
+    const tenantId = getTenantId(req);
 
     if (!isSupabaseConfigured) {
-      return res.json({ success: true, orders: [] });
+      const tenantOrders = inMemOrders.filter((o) => o.tenant_id === tenantId);
+      const enriched = tenantOrders.map((o) => {
+        const cust = inMemCustomers.find((c) => c.id === o.customer_id);
+        return {
+          ...o,
+          customers: cust
+            ? {
+                id: cust.id,
+                code: cust.code,
+                name: cust.name,
+                contact_person: cust.contact_person,
+                phone: cust.phone,
+                delivery_address: cust.delivery_address,
+              }
+            : null,
+        };
+      });
+      return res.json({ success: true, orders: enriched });
     }
 
     const { data: orders, error } = await supabase
@@ -35,35 +100,66 @@ export const getOrders = async (req: Request, res: Response) => {
 // Create new customer order (ORD-02, ORD-03)
 export const createOrder = async (req: Request, res: Response) => {
   try {
-    const tenantId = req.tenantId;
+    const tenantId = getTenantId(req);
     const userId = req.user?.id;
 
     const schema = z.object({
-      customerId: z.string().uuid(),
+      customerId: z.string().min(1),
       orderNumber: z.string().min(3),
       requiredDeliveryDate: z.string(),
       notes: z.string().optional(),
-      items: z.array(z.object({
-        productId: z.string().uuid(),
-        requestedQuantityKg: z.number().positive(),
-        notes: z.string().optional()
-      })).min(1)
+      items: z
+        .array(
+          z.object({
+            productId: z.string().min(1),
+            requestedQuantityKg: z.number().positive(),
+            notes: z.string().optional(),
+          })
+        )
+        .min(1),
     });
 
     const body = schema.parse(req.body);
     const totalWeight = body.items.reduce((sum, item) => sum + item.requestedQuantityKg, 0);
 
     if (!isSupabaseConfigured) {
+      const orderId = crypto.randomUUID();
+      const orderItems: InMemOrderItem[] = body.items.map((it) => ({
+        id: crypto.randomUUID(),
+        order_id: orderId,
+        product_id: it.productId,
+        requested_quantity_kg: it.requestedQuantityKg,
+        planned_quantity_kg: it.requestedQuantityKg,
+        produced_quantity_kg: 0,
+        dispatched_quantity_kg: 0,
+        status: 'pending',
+        notes: it.notes,
+      }));
+
+      const newOrder: InMemOrder = {
+        id: orderId,
+        tenant_id: tenantId,
+        customer_id: body.customerId,
+        order_number: body.orderNumber.trim(),
+        order_date: new Date().toISOString().split('T')[0],
+        required_delivery_date: body.requiredDeliveryDate,
+        status: 'confirmed',
+        total_requested_weight_kg: totalWeight,
+        notes: body.notes,
+        created_by: userId,
+        created_at: new Date().toISOString(),
+        customer_order_items: orderItems,
+      };
+
+      inMemOrders.unshift(newOrder);
+
+      const cust = inMemCustomers.find((c) => c.id === body.customerId);
       return res.status(201).json({
         success: true,
         order: {
-          id: `ord-${Date.now()}`,
-          order_number: body.orderNumber,
-          customer_id: body.customerId,
-          status: 'confirmed',
-          total_requested_weight_kg: totalWeight,
-          items: body.items
-        }
+          ...newOrder,
+          customers: cust || null,
+        },
       });
     }
 
@@ -76,9 +172,9 @@ export const createOrder = async (req: Request, res: Response) => {
         order_number: body.orderNumber,
         required_delivery_date: body.requiredDeliveryDate,
         total_requested_weight_kg: totalWeight,
-        status: 'confirmed', // Confirmed so production can start (ORD-04)
+        status: 'confirmed',
         notes: body.notes,
-        created_by: userId
+        created_by: userId,
       })
       .select('*')
       .single();
@@ -86,13 +182,13 @@ export const createOrder = async (req: Request, res: Response) => {
     if (ordErr) throw ordErr;
 
     // 2. Insert order items
-    const itemsData = body.items.map(item => ({
+    const itemsData = body.items.map((item) => ({
       order_id: order.id,
       product_id: item.productId,
       requested_quantity_kg: item.requestedQuantityKg,
       planned_quantity_kg: item.requestedQuantityKg,
       status: 'pending',
-      notes: item.notes
+      notes: item.notes,
     }));
 
     const { data: items, error: itemErr } = await supabase
@@ -109,7 +205,7 @@ export const createOrder = async (req: Request, res: Response) => {
       action: 'CREATE_CUSTOMER_ORDER',
       entity_name: 'customer_orders',
       entity_id: order.id,
-      new_values: { order, items }
+      new_values: { order, items },
     });
 
     return res.status(201).json({ success: true, order: { ...order, items } });
@@ -121,20 +217,20 @@ export const createOrder = async (req: Request, res: Response) => {
   }
 };
 
-// Customer management helpers
+// Customer management: Get list of customers
 export const getCustomers = async (req: Request, res: Response) => {
   try {
-    const tenantId = req.tenantId;
+    const tenantId = getTenantId(req);
 
     if (!isSupabaseConfigured) {
-      return res.json({ success: true, customers: [] });
+      const list = inMemCustomers.filter((c) => c.tenant_id === tenantId);
+      return res.json({ success: true, customers: list });
     }
 
     const { data: customers, error } = await supabase
       .from('customers')
       .select('*')
       .eq('tenant_id', tenantId)
-      .eq('is_active', true)
       .order('name', { ascending: true });
 
     if (error) throw error;
@@ -144,46 +240,279 @@ export const getCustomers = async (req: Request, res: Response) => {
   }
 };
 
+// Customer management: Create Customer
 export const createCustomer = async (req: Request, res: Response) => {
   try {
-    const tenantId = req.tenantId;
+    const tenantId = getTenantId(req);
     const schema = z.object({
       code: z.string().min(2),
       name: z.string().min(2),
       contactPerson: z.string().optional(),
       phone: z.string().optional(),
-      email: z.string().email().optional(),
+      email: z.string().email().optional().or(z.literal('')),
       billingAddress: z.string().optional(),
-      deliveryAddress: z.string().optional()
+      deliveryAddress: z.string().optional(),
     });
 
     const body = schema.parse(req.body);
+    const codeUpper = body.code.trim().toUpperCase();
 
     if (!isSupabaseConfigured) {
-      return res.status(201).json({ success: true, customer: { id: `cust-${Date.now()}`, ...body } });
+      const exists = inMemCustomers.find(
+        (c) => c.tenant_id === tenantId && c.code.toUpperCase() === codeUpper
+      );
+      if (exists) {
+        return res.status(400).json({ success: false, message: `Customer with code '${codeUpper}' already exists.` });
+      }
+
+      const newCustomer: InMemCustomer = {
+        id: crypto.randomUUID(),
+        tenant_id: tenantId,
+        code: codeUpper,
+        name: body.name.trim(),
+        contact_person: body.contactPerson?.trim() || '',
+        phone: body.phone?.trim() || '',
+        email: body.email?.trim() || '',
+        billing_address: body.billingAddress?.trim() || '',
+        delivery_address: body.deliveryAddress?.trim() || '',
+        is_active: true,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      };
+
+      inMemCustomers.push(newCustomer);
+      return res.status(201).json({ success: true, customer: newCustomer });
     }
 
     const { data: customer, error } = await supabase
       .from('customers')
       .insert({
         tenant_id: tenantId,
-        code: body.code.toUpperCase(),
-        name: body.name,
+        code: codeUpper,
+        name: body.name.trim(),
         contact_person: body.contactPerson,
         phone: body.phone,
-        email: body.email,
+        email: body.email || null,
         billing_address: body.billingAddress,
-        delivery_address: body.deliveryAddress
+        delivery_address: body.deliveryAddress,
       })
       .select('*')
       .single();
 
-    if (error) throw error;
+    if (error) {
+      if (error.code === '23505') {
+        return res.status(400).json({ success: false, message: `Customer code '${codeUpper}' already exists in this factory.` });
+      }
+      throw error;
+    }
     return res.status(201).json({ success: true, customer });
   } catch (error: any) {
     if (error instanceof z.ZodError) {
       return res.status(400).json({ success: false, errors: error.issues });
     }
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+// Customer management: Update Customer Details
+export const updateCustomer = async (req: Request, res: Response) => {
+  try {
+    const tenantId = getTenantId(req);
+    const { id } = req.params;
+
+    const schema = z.object({
+      name: z.string().min(2).optional(),
+      contactPerson: z.string().optional(),
+      phone: z.string().optional(),
+      email: z.string().email().optional().or(z.literal('')),
+      billingAddress: z.string().optional(),
+      deliveryAddress: z.string().optional(),
+      isActive: z.boolean().optional(),
+    });
+
+    const body = schema.parse(req.body);
+
+    if (!isSupabaseConfigured) {
+      const index = inMemCustomers.findIndex((c) => c.tenant_id === tenantId && c.id === id);
+      if (index === -1) {
+        return res.status(404).json({ success: false, message: 'Customer not found.' });
+      }
+
+      inMemCustomers[index] = {
+        ...inMemCustomers[index],
+        ...(body.name ? { name: body.name.trim() } : {}),
+        ...(body.contactPerson !== undefined ? { contact_person: body.contactPerson.trim() } : {}),
+        ...(body.phone !== undefined ? { phone: body.phone.trim() } : {}),
+        ...(body.email !== undefined ? { email: body.email.trim() } : {}),
+        ...(body.billingAddress !== undefined ? { billing_address: body.billingAddress.trim() } : {}),
+        ...(body.deliveryAddress !== undefined ? { delivery_address: body.deliveryAddress.trim() } : {}),
+        ...(body.isActive !== undefined ? { is_active: body.isActive } : {}),
+        updated_at: new Date().toISOString(),
+      };
+
+      return res.json({ success: true, customer: inMemCustomers[index] });
+    }
+
+    const updates: any = { updated_at: new Date().toISOString() };
+    if (body.name) updates.name = body.name.trim();
+    if (body.contactPerson !== undefined) updates.contact_person = body.contactPerson;
+    if (body.phone !== undefined) updates.phone = body.phone;
+    if (body.email !== undefined) updates.email = body.email || null;
+    if (body.billingAddress !== undefined) updates.billing_address = body.billingAddress;
+    if (body.deliveryAddress !== undefined) updates.delivery_address = body.deliveryAddress;
+    if (body.isActive !== undefined) updates.is_active = body.isActive;
+
+    const { data, error } = await supabase
+      .from('customers')
+      .update(updates)
+      .eq('id', id)
+      .eq('tenant_id', tenantId)
+      .select('*')
+      .single();
+
+    if (error) throw error;
+    return res.json({ success: true, customer: data });
+  } catch (error: any) {
+    if (error instanceof z.ZodError) {
+      return res.status(400).json({ success: false, errors: error.issues });
+    }
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+// Customer management: Delete Customer
+export const deleteCustomer = async (req: Request, res: Response) => {
+  try {
+    const tenantId = getTenantId(req);
+    const { id } = req.params;
+
+    if (!isSupabaseConfigured) {
+      const hasOrders = inMemOrders.some((o) => o.tenant_id === tenantId && o.customer_id === id);
+      if (hasOrders) {
+        return res.status(400).json({
+          success: false,
+          message: 'Cannot delete customer because confirmed customer orders are linked to this account.',
+        });
+      }
+
+      inMemCustomers = inMemCustomers.filter((c) => !(c.tenant_id === tenantId && c.id === id));
+      return res.json({ success: true, message: 'Customer deleted successfully.' });
+    }
+
+    const { count, error: countErr } = await supabase
+      .from('customer_orders')
+      .select('*', { count: 'exact', head: true })
+      .eq('customer_id', id)
+      .eq('tenant_id', tenantId);
+
+    if (countErr) throw countErr;
+    if (count && count > 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Cannot delete customer because confirmed customer orders are linked to this account.',
+      });
+    }
+
+    const { error: delErr } = await supabase
+      .from('customers')
+      .delete()
+      .eq('id', id)
+      .eq('tenant_id', tenantId);
+
+    if (delErr) throw delErr;
+    return res.json({ success: true, message: 'Customer deleted successfully.' });
+  } catch (error: any) {
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+// Customer management: Seed Sample Packaging Customers
+export const seedDefaultCustomers = async (req: Request, res: Response) => {
+  try {
+    const tenantId = getTenantId(req);
+
+    const defaultCustomers = [
+      {
+        code: 'CUST-AMUL',
+        name: 'Amul Dairy Foods Ltd.',
+        contact_person: 'Vikram Mehta (Procurement Head)',
+        phone: '+91 98765 11223',
+        email: 'procurement@amul.coop',
+        billing_address: 'Amul Dairy Road, Anand, Gujarat - 388001',
+        delivery_address: 'Amul Central Packaging Depot, Plant #4, Anand, Gujarat',
+      },
+      {
+        code: 'CUST-PARLE',
+        name: 'Parle Products Pvt. Ltd.',
+        contact_person: 'Anita Sharma (SCM Packaging)',
+        phone: '+91 98234 55667',
+        email: 'packaging.orders@parle.biz',
+        billing_address: 'North Level Crossing, Vile Parle East, Mumbai - 400057',
+        delivery_address: 'Parle Confectionery Unit, GIDC Estate, Ahmedabad',
+      },
+      {
+        code: 'CUST-NESTLE',
+        name: 'Nestlé India Ltd.',
+        contact_person: 'Deepak Verma (Vendor Quality)',
+        phone: '+91 99123 77889',
+        email: 'vendorops@nestle.in',
+        billing_address: 'Nestlé House, Jacaranda Marg, DLF Phase 2, Gurugram',
+        delivery_address: 'Nestlé Moga Factory, GT Road, Moga, Punjab - 142001',
+      },
+      {
+        code: 'CUST-HALD',
+        name: 'Haldiram Snacks Mfg. Ltd.',
+        contact_person: 'Sanjay Singhal (Store Manager)',
+        phone: '+91 98111 88990',
+        email: 'purchase@haldirams.com',
+        billing_address: 'B-1/H-8, Mohan Co-op Industrial Estate, Mathura Road, New Delhi',
+        delivery_address: 'Haldiram Mega Food Park, Sector 68, Noida, Uttar Pradesh',
+      },
+    ];
+
+    if (!isSupabaseConfigured) {
+      const added: InMemCustomer[] = [];
+      for (const item of defaultCustomers) {
+        const exists = inMemCustomers.find(
+          (c) => c.tenant_id === tenantId && c.code.toUpperCase() === item.code
+        );
+        if (!exists) {
+          const cust: InMemCustomer = {
+            id: crypto.randomUUID(),
+            tenant_id: tenantId,
+            ...item,
+            is_active: true,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          };
+          inMemCustomers.push(cust);
+          added.push(cust);
+        }
+      }
+      return res.json({ success: true, message: `Configured ${added.length} sample enterprise clients.`, added });
+    }
+
+    const { data: existing } = await supabase
+      .from('customers')
+      .select('code')
+      .eq('tenant_id', tenantId);
+
+    const existingCodes = new Set((existing || []).map((e: any) => e.code));
+    const toInsert = defaultCustomers
+      .filter((c) => !existingCodes.has(c.code))
+      .map((c) => ({
+        tenant_id: tenantId,
+        ...c,
+      }));
+
+    if (toInsert.length > 0) {
+      const { data, error } = await supabase.from('customers').insert(toInsert).select('*');
+      if (error) throw error;
+      return res.json({ success: true, message: `Configured ${toInsert.length} clients.`, added: data });
+    }
+
+    return res.json({ success: true, message: 'All sample packaging clients already exist.', added: [] });
+  } catch (error: any) {
     return res.status(500).json({ success: false, message: error.message });
   }
 };
