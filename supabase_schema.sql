@@ -494,7 +494,7 @@ DECLARE
     v_tenant_id UUID;
     v_admin_id UUID;
     -- Argon2 hash for default password 'Admin@123'
-    v_admin_pwd TEXT := '$argon2id$v=19$m=65536,t=3,p=4$z8X/J7rE7A1g6QpU3K1eg$Vq0W2y1aXbZ9c8d7e6f5g4h3i2j1k0l';
+    v_admin_pwd TEXT := '$argon2id$v=19$m=65536,t=3,p=4$7iPVXi9jH1y7+Jtb5AeoGg$+7a/XNpXGgEcy6B47mh8Q8iqq7a8q/f8+YjMzjJj2XA';
 BEGIN
     -- 1. Insert Single Factory Tenant
     INSERT INTO tenants (tenant_id, name, status, address, contact_email, contact_phone)

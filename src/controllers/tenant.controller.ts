@@ -1,5 +1,5 @@
 import { Request, Response } from 'express';
-import { supabase, isSupabaseConfigured } from '../config/supabase';
+import { supabase, supabaseAdmin, isSupabaseConfigured } from '../config/supabase';
 import { z } from 'zod';
 
 // List Tenants (Platform Admin)
@@ -22,7 +22,8 @@ export const getTenants = async (req: Request, res: Response) => {
       });
     }
 
-    const { data: tenants, error } = await supabase
+    const dbClient = supabaseAdmin || supabase;
+    const { data: tenants, error } = await dbClient
       .from('tenants')
       .select('*, tenant_settings(*)')
       .order('name', { ascending: true });

@@ -13,9 +13,9 @@ if (!isSupabaseConfigured) {
   console.warn('\x1b[33m%s\x1b[0m', '⚠️  [CONFIG] SUPABASE_URL or SUPABASE_ANON_KEY is not configured in .env yet.');
 }
 
-// Client for regular operations
+// Client for regular operations (prefers service role key if available for backend operations, fallback to anon key)
 export const supabase = isSupabaseConfigured
-  ? createClient(supabaseUrl, supabaseKey)
+  ? createClient(supabaseUrl, supabaseServiceKey || supabaseKey)
   : (null as any);
 
 // Privileged admin client for atomic transactions and background sync
