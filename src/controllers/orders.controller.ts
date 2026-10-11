@@ -45,8 +45,10 @@ interface InMemOrder {
   customer_order_items: InMemOrderItem[];
 }
 
-let inMemCustomers: InMemCustomer[] = [];
-let inMemOrders: InMemOrder[] = [];
+import { mockStore, saveMockStore } from '../utils/mockStore';
+
+export let inMemCustomers: InMemCustomer[] = mockStore.customers;
+export let inMemOrders: InMemOrder[] = mockStore.orders;
 
 const getTenantId = (req: Request): string => (req.tenantId || process.env.DEFAULT_TENANT_SLUG || 'shri-hari-pack') as string;
 
@@ -153,6 +155,7 @@ export const createOrder = async (req: Request, res: Response) => {
       };
 
       inMemOrders.unshift(newOrder);
+      saveMockStore();
 
       const cust = inMemCustomers.find((c) => c.id === body.customerId);
       return res.status(201).json({
@@ -282,6 +285,7 @@ export const createCustomer = async (req: Request, res: Response) => {
       };
 
       inMemCustomers.push(newCustomer);
+      saveMockStore();
       return res.status(201).json({ success: true, customer: newCustomer });
     }
 
@@ -351,6 +355,8 @@ export const updateCustomer = async (req: Request, res: Response) => {
         updated_at: new Date().toISOString(),
       };
 
+      saveMockStore();
+
       return res.json({ success: true, customer: inMemCustomers[index] });
     }
 
@@ -388,8 +394,11 @@ export const deleteCustomer = async (req: Request, res: Response) => {
 
     if (!isSupabaseConfigured) {
       // Remove any linked orders in memory so user is never stuck
-      inMemOrders = inMemOrders.filter((o) => o.customer_id !== id);
-      inMemCustomers = inMemCustomers.filter((c) => c.id !== id);
+      mockStore.orders = mockStore.orders.filter((o) => o.customer_id !== id);
+      mockStore.customers = mockStore.customers.filter((c) => c.id !== id);
+      inMemOrders = mockStore.orders;
+      inMemCustomers = mockStore.customers;
+      saveMockStore();
       return res.json({ success: true, message: 'Customer deleted successfully.' });
     }
 

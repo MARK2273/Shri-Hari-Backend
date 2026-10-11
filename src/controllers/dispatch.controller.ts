@@ -1,14 +1,51 @@
 import { Request, Response } from 'express';
 import { supabase, isSupabaseConfigured } from '../config/supabase';
 import { z } from 'zod';
+import { inMemOrders, inMemCustomers } from './orders.controller';
+import { inMemProducts } from './products.controller';
+import { inMemFGBatches } from './finishedGoods.controller';
+
+export interface InMemDelivery {
+  id: string;
+  tenant_id: string;
+  order_id: string;
+  customer_id: string;
+  delivery_number: string;
+  destination_address: string;
+  vehicle_number?: string;
+  dispatch_date: string;
+  status: string;
+  notes?: string;
+  customers?: any;
+  customer_orders?: any;
+  delivery_items?: any[];
+}
+
+import { mockStore, saveMockStore } from '../utils/mockStore';
+
+export let inMemDeliveries: InMemDelivery[] = mockStore.deliveries;
+
+const getTenantId = (req: Request): string =>
+  (req.tenantId || process.env.DEFAULT_TENANT_SLUG || 'shri-hari-pack') as string;
 
 // List deliveries / dispatches
 export const getDeliveries = async (req: Request, res: Response) => {
   try {
-    const tenantId = req.tenantId;
+    const tenantId = getTenantId(req);
 
     if (!isSupabaseConfigured) {
-      return res.json({ success: true, deliveries: [] });
+      const tenantDeliveries = inMemDeliveries.filter((d) => d.tenant_id === tenantId);
+      const enriched = tenantDeliveries.map((d) => {
+        const ord = inMemOrders.find((o) => o.id === d.order_id);
+        const cust = inMemCustomers.find((c) => c.id === d.customer_id);
+        return {
+          ...d,
+          customers: cust ? { id: cust.id, code: cust.code, name: cust.name, contact_person: cust.contact_person, phone: cust.phone } : null,
+          customer_orders: ord ? { id: ord.id, order_number: ord.order_number } : null,
+          delivery_items: d.delivery_items || [],
+        };
+      });
+      return res.json({ success: true, deliveries: enriched });
     }
 
     const { data: deliveries, error } = await supabase
@@ -39,7 +76,7 @@ export const getDeliveries = async (req: Request, res: Response) => {
 // Create & Confirm Dispatch Note (DEL-01..DEL-06)
 export const createAndConfirmDispatch = async (req: Request, res: Response) => {
   try {
-    const tenantId = req.tenantId;
+    const tenantId = getTenantId(req);
     const userId = req.user?.id;
 
     const schema = z.object({
@@ -66,10 +103,81 @@ export const createAndConfirmDispatch = async (req: Request, res: Response) => {
     const generatedDeliveryNum = body.deliveryNumber || `DEL-${dateStr}-${randSuffix}`;
 
     if (!isSupabaseConfigured) {
+      const ord = inMemOrders.find((o) => o.id === body.orderId || o.order_number === body.orderId);
+      const cust = ord?.customer_id ? inMemCustomers.find((c) => c.id === ord.customer_id) : null;
+
+      // Deduct FG inventory & record
+      for (const itm of body.items) {
+        for (const alloc of itm.batchAllocations) {
+          const fg = inMemFGBatches.find((b) => b.id === alloc.finishedGoodsBatchId);
+          if (fg) {
+            fg.quantity_on_hand_kg = Math.max(0, Number(fg.quantity_on_hand_kg) - alloc.quantityKg);
+            fg.quantity_dispatched_kg = (fg.quantity_dispatched_kg || 0) + alloc.quantityKg;
+            if (fg.quantity_on_hand_kg === 0) {
+              fg.status = 'depleted';
+            }
+          }
+        }
+
+        if (ord) {
+          const orderItem = ord.customer_order_items?.find((i) => i.id === itm.orderItemId) || ord.customer_order_items?.[0];
+          if (orderItem) {
+            orderItem.dispatched_quantity_kg = (orderItem.dispatched_quantity_kg || 0) + itm.quantityKg;
+            if (orderItem.dispatched_quantity_kg >= orderItem.requested_quantity_kg) {
+              orderItem.status = 'dispatched';
+            }
+          }
+        }
+      }
+
+      if (ord) {
+        const allDispatched = (ord.customer_order_items || []).every(
+          (i) => (i.dispatched_quantity_kg || 0) >= i.requested_quantity_kg
+        );
+        if (allDispatched) {
+          ord.status = 'dispatched';
+        }
+      }
+
+      const newDelivery: InMemDelivery = {
+        id: `del-${Date.now()}`,
+        tenant_id: tenantId,
+        order_id: ord?.id || body.orderId,
+        customer_id: ord?.customer_id || '',
+        delivery_number: generatedDeliveryNum,
+        destination_address: body.destinationAddress,
+        vehicle_number: body.vehicleNumber,
+        dispatch_date: new Date().toISOString().split('T')[0],
+        status: 'dispatched',
+        notes: body.notes,
+        customers: cust ? { id: cust.id, code: cust.code, name: cust.name, contact_person: cust.contact_person, phone: cust.phone } : null,
+        customer_orders: ord ? { id: ord.id, order_number: ord.order_number } : null,
+        delivery_items: body.items.map((i) => {
+          const prod = inMemProducts.find((p) => p.id === i.productId);
+          return {
+            id: `di-${Date.now()}`,
+            quantity_kg: i.quantityKg,
+            products: prod ? { id: prod.id, code: prod.code, name: prod.name, unit: prod.unit } : null,
+            delivery_batch_allocations: i.batchAllocations.map((a) => {
+              const fg = inMemFGBatches.find((b) => b.id === a.finishedGoodsBatchId);
+              return {
+                id: `dba-${Date.now()}`,
+                allocated_quantity_kg: a.quantityKg,
+                finished_goods_batches: fg ? { id: fg.id, batch_number: fg.batch_number } : null,
+              };
+            }),
+          };
+        }),
+      };
+
+      inMemDeliveries.unshift(newDelivery);
+      saveMockStore();
+
       return res.status(201).json({
         success: true,
-        message: 'Dispatch created and confirmed (mock mode)',
-        delivery_number: generatedDeliveryNum
+        message: 'Dispatch note created and inventory deducted successfully!',
+        delivery_number: generatedDeliveryNum,
+        delivery: newDelivery,
       });
     }
 

@@ -39,7 +39,9 @@ interface InMemProduct {
   product_recipes: InMemRecipe[];
 }
 
-export let inMemProducts: InMemProduct[] = [];
+import { mockStore, saveMockStore } from '../utils/mockStore';
+
+export let inMemProducts: InMemProduct[] = mockStore.products;
 
 const getTenantId = (req: Request): string => (req.tenantId || process.env.DEFAULT_TENANT_SLUG || 'shri-hari-pack') as string;
 

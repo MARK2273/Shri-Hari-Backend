@@ -1,14 +1,70 @@
 import { Request, Response } from 'express';
 import { supabase, isSupabaseConfigured } from '../config/supabase';
 import { z } from 'zod';
+import { inMemOrders, inMemCustomers } from './orders.controller';
+import { inMemProducts } from './products.controller';
+import { inMemBatches, inMemMaterials } from './materials.controller';
+import { inMemFGBatches, InMemFGBatch } from './finishedGoods.controller';
+
+export interface InMemProductionBatch {
+  id: string;
+  tenant_id: string;
+  order_id: string;
+  order_item_id: string;
+  product_id: string;
+  recipe_id: string;
+  batch_number: string;
+  planned_quantity_kg: number;
+  status: 'draft' | 'in_progress' | 'completed' | 'cancelled';
+  operator_id?: string;
+  supervisor_id?: string;
+  start_time: string;
+  end_time?: string;
+  notes?: string;
+  created_at: string;
+  customer_orders?: any;
+  products?: any;
+  product_recipes?: any;
+  production_material_consumption?: any[];
+  production_outputs?: any[];
+}
+
+import { mockStore, saveMockStore } from '../utils/mockStore';
+
+export let inMemProductionBatches: InMemProductionBatch[] = mockStore.productionBatches;
+
+const getTenantId = (req: Request): string =>
+  (req.tenantId || process.env.DEFAULT_TENANT_SLUG || 'shri-hari-pack') as string;
 
 // List Production Batches
 export const getProductionBatches = async (req: Request, res: Response) => {
   try {
-    const tenantId = req.tenantId;
+    const tenantId = getTenantId(req);
 
     if (!isSupabaseConfigured) {
-      return res.json({ success: true, batches: [] });
+      const tenantBatches = inMemProductionBatches.filter((b) => b.tenant_id === tenantId);
+      const enriched = tenantBatches.map((b) => {
+        const ord = inMemOrders.find((o) => o.id === b.order_id);
+        const prod = inMemProducts.find((p) => p.id === b.product_id);
+        const recipe =
+          prod?.product_recipes?.find((r) => r.id === b.recipe_id) || prod?.product_recipes?.[0];
+        const cust = ord?.customer_id ? inMemCustomers.find((c) => c.id === ord.customer_id) : null;
+        return {
+          ...b,
+          customer_orders: ord
+            ? {
+                id: ord.id,
+                order_number: ord.order_number,
+                customers: cust ? { name: cust.name } : null,
+              }
+            : null,
+          products: prod ? { id: prod.id, code: prod.code, name: prod.name, unit: prod.unit } : null,
+          product_recipes: recipe ? { id: recipe.id, version: recipe.version } : null,
+          production_material_consumption: b.production_material_consumption || [],
+          production_outputs: b.production_outputs || [],
+        };
+      });
+      return res.json({ success: true, batches: enriched });
     }
 
     const { data: batches, error } = await supabase
@@ -40,33 +96,75 @@ export const getProductionBatches = async (req: Request, res: Response) => {
 // Start / Draft Production Run (PRO-01, PRO-02, PRO-03, PRO-09)
 export const createProductionBatch = async (req: Request, res: Response) => {
   try {
-    const tenantId = req.tenantId;
+    const tenantId = getTenantId(req);
     const userId = req.user?.id;
 
     const schema = z.object({
       orderId: z.string().min(1),
-      orderItemId: z.string().min(1),
-      recipeId: z.string().min(1),
+      orderItemId: z.string().optional().default(''),
+      recipeId: z.string().optional().default(''),
       batchNumber: z.string().optional(),
       plannedQuantityKg: z.number().positive(),
       operatorId: z.string().optional(),
       supervisorId: z.string().optional(),
-      notes: z.string().optional()
+      notes: z.string().optional(),
     });
 
     const body = schema.parse(req.body);
-    const resolvedBatchNumber = body.batchNumber?.trim() || `PB-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}-${Math.floor(Math.random() * 900 + 100)}`;
+    const resolvedBatchNumber =
+      body.batchNumber?.trim() ||
+      `PB-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}-${Math.floor(
+        Math.random() * 900 + 100
+      )}`;
 
     if (!isSupabaseConfigured) {
-      return res.status(201).json({
-        success: true,
-        batch: {
-          id: `pb-${Date.now()}`,
-          batch_number: resolvedBatchNumber,
-          planned_quantity_kg: body.plannedQuantityKg,
-          status: 'draft'
-        }
-      });
+      const ord = inMemOrders.find((o) => o.id === body.orderId || o.order_number === body.orderId);
+      if (!ord) {
+        return res.status(404).json({ success: false, message: 'Order not found' });
+      }
+
+      const orderItem =
+        ord.customer_order_items?.find((i) => i.id === body.orderItemId) ||
+        ord.customer_order_items?.[0];
+      const prod = inMemProducts.find((p) => p.id === orderItem?.product_id);
+      const cust = ord.customer_id ? inMemCustomers.find((c) => c.id === ord.customer_id) : null;
+      const recipe =
+        prod?.product_recipes?.find((r) => r.id === body.recipeId) || prod?.product_recipes?.[0];
+
+      const newBatch: InMemProductionBatch = {
+        id: `pb-${Date.now()}`,
+        tenant_id: tenantId,
+        order_id: ord.id,
+        order_item_id: orderItem?.id || `oi-${Date.now()}`,
+        product_id: orderItem?.product_id || prod?.id || '',
+        recipe_id: recipe?.id || body.recipeId || 'rec-default',
+        batch_number: resolvedBatchNumber,
+        planned_quantity_kg: body.plannedQuantityKg,
+        status: 'draft',
+        operator_id: body.operatorId || userId,
+        supervisor_id: body.supervisorId,
+        start_time: new Date().toISOString(),
+        notes: body.notes,
+        created_at: new Date().toISOString(),
+        customer_orders: {
+          id: ord.id,
+          order_number: ord.order_number,
+          customers: cust ? { name: cust.name } : null,
+        },
+        products: prod ? { id: prod.id, code: prod.code, name: prod.name, unit: prod.unit } : null,
+        product_recipes: recipe ? { id: recipe.id, version: recipe.version } : null,
+        production_material_consumption: [],
+        production_outputs: [],
+      };
+
+      inMemProductionBatches.unshift(newBatch);
+
+      ord.status = 'in_production';
+      if (orderItem) orderItem.status = 'in_production';
+
+      saveMockStore();
+
+      return res.status(201).json({ success: true, batch: newBatch });
     }
 
     // Verify order item
@@ -125,15 +223,15 @@ export const createProductionBatch = async (req: Request, res: Response) => {
 // Confirm Production Run: Atomically records lot consumption, outputs, finished goods & transactions (PRO-04..PRO-08)
 export const confirmProductionBatch = async (req: Request, res: Response) => {
   try {
-    const tenantId = req.tenantId;
+    const tenantId = getTenantId(req);
     const userId = req.user?.id;
     const { batchId } = req.params;
 
     const schema = z.object({
       // Specific lots and kg consumed from each lot (PRO-05)
       consumption: z.array(z.object({
-        materialId: z.string().uuid(),
-        materialBatchId: z.string().uuid(),
+        materialId: z.string().min(1),
+        materialBatchId: z.string().min(1),
         plannedQuantityKg: z.number().nonnegative(),
         actualQuantityKg: z.number().positive(),
         notes: z.string().optional()
@@ -148,15 +246,98 @@ export const confirmProductionBatch = async (req: Request, res: Response) => {
     const body = schema.parse(req.body);
 
     if (!isSupabaseConfigured) {
+      const batch = inMemProductionBatches.find(
+        (b) => b.id === batchId && b.tenant_id === tenantId
+      );
+      if (!batch) {
+        return res.status(404).json({ success: false, message: 'Production batch not found' });
+      }
+
+      // Deduct consumption from inMemBatches
+      for (const item of body.consumption) {
+        const matBatch = inMemBatches.find((b) => b.id === item.materialBatchId);
+        if (matBatch) {
+          matBatch.remaining_quantity_kg = Math.max(
+            0,
+            Number(matBatch.remaining_quantity_kg) - item.actualQuantityKg
+          );
+          if (matBatch.remaining_quantity_kg === 0) {
+            matBatch.status = 'depleted';
+          }
+        }
+      }
+
+      batch.status = 'completed';
+      batch.end_time = new Date().toISOString();
+      batch.production_material_consumption = body.consumption.map((c) => {
+        const mat = inMemMaterials.find((m) => m.id === c.materialId);
+        const mb = inMemBatches.find((b) => b.id === c.materialBatchId);
+        return {
+          id: `pmc-${Date.now()}-${Math.random()}`,
+          material_id: c.materialId,
+          material_batch_id: c.materialBatchId,
+          planned_quantity_kg: c.plannedQuantityKg,
+          actual_quantity_kg: c.actualQuantityKg,
+          materials: mat ? { code: mat.code, name: mat.name } : null,
+          material_batches: mb
+            ? { batch_number: mb.batch_number, supplier_lot_number: mb.supplier_lot_number }
+            : null,
+        };
+      });
+      batch.production_outputs = [
+        {
+          id: `out-${Date.now()}`,
+          accepted_kg: body.acceptedOutputKg,
+          waste_kg: body.wasteKg,
+          rejected_kg: body.rejectedKg,
+          recorded_at: new Date().toISOString(),
+        },
+      ];
+
+      // Create Finished Goods batch
+      const fgBatchNumber = `FG-${batch.batch_number.replace('PB-', '')}`;
+      const newFGBatch: InMemFGBatch = {
+        id: `fg-${Date.now()}`,
+        tenant_id: tenantId,
+        product_id: batch.product_id,
+        production_batch_id: batch.id,
+        batch_number: fgBatchNumber,
+        quantity_on_hand_kg: body.acceptedOutputKg,
+        quantity_reserved_kg: 0,
+        quantity_dispatched_kg: 0,
+        status: 'available',
+        created_at: new Date().toISOString(),
+      };
+      inMemFGBatches.unshift(newFGBatch);
+
+      // Update customer order produced kg
+      const ord = inMemOrders.find((o) => o.id === batch.order_id);
+      if (ord) {
+        const orderItem =
+          ord.customer_order_items?.find((i) => i.id === batch.order_item_id) ||
+          ord.customer_order_items?.[0];
+        if (orderItem) {
+          orderItem.produced_quantity_kg =
+            (orderItem.produced_quantity_kg || 0) + body.acceptedOutputKg;
+          if (orderItem.produced_quantity_kg >= orderItem.requested_quantity_kg) {
+            orderItem.status = 'produced';
+          }
+        }
+      }
+
+      saveMockStore();
+
       return res.json({
         success: true,
-        message: 'Production confirmed successfully (mock mode)',
+        message: 'Production batch confirmed and completed successfully!',
+        batch,
         summary: {
           total_consumed_kg: body.consumption.reduce((s, c) => s + c.actualQuantityKg, 0),
           accepted_output_kg: body.acceptedOutputKg,
           waste_kg: body.wasteKg,
-          rejected_kg: body.rejectedKg
-        }
+          rejected_kg: body.rejectedKg,
+          fg_batch_created: fgBatchNumber,
+        },
       });
     }
 

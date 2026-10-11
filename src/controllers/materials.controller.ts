@@ -33,9 +33,11 @@ interface InMemBatch {
   created_at: string;
 }
 
+import { mockStore, saveMockStore } from '../utils/mockStore';
+
 // In-memory tenant stores when running without active Supabase credentials
-export let inMemMaterials: InMemMaterial[] = [];
-export let inMemBatches: InMemBatch[] = [];
+export let inMemMaterials: InMemMaterial[] = mockStore.materials;
+export let inMemBatches: InMemBatch[] = mockStore.batches;
 
 const getTenantId = (req: Request): string => (req.tenantId || process.env.DEFAULT_TENANT_SLUG || 'shri-hari-pack') as string;
 
