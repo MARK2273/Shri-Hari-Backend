@@ -8,27 +8,7 @@ export const getProductionBatches = async (req: Request, res: Response) => {
     const tenantId = req.tenantId;
 
     if (!isSupabaseConfigured) {
-      return res.json({
-        success: true,
-        batches: [
-          {
-            id: 'pb-1',
-            batch_number: 'PB-20261011-001',
-            order_number: 'ORD-20261011-001',
-            product_name: 'Multi-Layer Co-Extruded Milk Pouch Film 500ml',
-            planned_quantity_kg: 200.0,
-            actual_input_kg: 200.0,
-            accepted_output_kg: 194.0,
-            waste_kg: 6.0,
-            rejected_kg: 0.0,
-            status: 'completed',
-            operator_name: 'Suresh Kumar',
-            supervisor_name: 'Vikas Patel',
-            start_time: '2026-10-11T08:00:00Z',
-            completion_time: '2026-10-11T11:30:00Z'
-          }
-        ]
-      });
+      return res.json({ success: true, batches: [] });
     }
 
     const { data: batches, error } = await supabase

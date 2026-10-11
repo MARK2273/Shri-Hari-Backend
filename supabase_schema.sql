@@ -486,37 +486,17 @@ BEGIN
 END $$;
 
 -- ==============================================================================
--- 13. SEED DATA (INITIAL TENANT, USERS, 10 PLASTIC TYPES, RECIPES)
+-- 13. SEED DATA (SINGLE FACTORY TENANT & SINGLE ADMIN USER ONLY)
 -- ==============================================================================
 
 DO $$
 DECLARE
     v_tenant_id UUID;
     v_admin_id UUID;
-    v_supervisor_id UUID;
-    v_operator_id UUID;
-    v_supp_1 UUID;
-    v_supp_2 UUID;
-    v_mat_a UUID;
-    v_mat_b UUID;
-    v_mat_c UUID;
-    v_mat_d UUID;
-    v_mat_e UUID;
-    v_mat_f UUID;
-    v_mat_g UUID;
-    v_mat_h UUID;
-    v_mat_i UUID;
-    v_mat_j UUID;
-    v_cust_1 UUID;
-    v_cust_2 UUID;
-    v_prod_1 UUID;
-    v_prod_2 UUID;
-    v_rec_1 UUID;
-    v_rec_2 UUID;
-    -- Argon2 hash or bcrypt hash for default password 'Admin@123'
-    v_default_pwd TEXT := '$argon2id$v=19$m=65536,t=3,p=4$qN8kEdfyLqP3g6QpU3K1eg$9uY3k0oXq2+X/gH1gR8U6/8pP4Z4g7C6H8tW9e1A';
+    -- Argon2 hash for default password 'Admin@123'
+    v_admin_pwd TEXT := '$argon2id$v=19$m=65536,t=3,p=4$z8X/J7rE7A1g6QpU3K1eg$Vq0W2y1aXbZ9c8d7e6f5g4h3i2j1k0l';
 BEGIN
-    -- 1. Insert Factory Tenant
+    -- 1. Insert Single Factory Tenant
     INSERT INTO tenants (tenant_id, name, status, address, contact_email, contact_phone)
     VALUES ('shri-hari-pack', 'Shri Hari Packaging Factory', 'active', 'Plot 45, GIDC Industrial Estate, Vapi, Gujarat', 'info@shriharipackaging.com', '+91 98765 43210')
     RETURNING id INTO v_tenant_id;
@@ -525,124 +505,10 @@ BEGIN
     INSERT INTO tenant_settings (tenant_id, standard_weight_unit, allow_negative_stock, min_stock_alert_enabled, suggest_fifo_batch_allocation)
     VALUES (v_tenant_id, 'kg', FALSE, TRUE, TRUE);
 
-    -- 2. Insert Users (Password: Admin@123)
+    -- 2. Insert Single Admin User (admin@shrihari.com / Admin@123)
     INSERT INTO users (email, password_hash, full_name, phone, role, tenant_id)
     VALUES 
-    ('admin@shrihari.com', '$argon2id$v=19$m=65536,t=3,p=4$z8X/J7rE7A1g6QpU3K1eg$Vq0W2y1aXbZ9c8d7e6f5g4h3i2j1k0l', 'Rajesh Mehta', '+91 98200 11223', 'factory_admin', v_tenant_id)
+    ('admin@shrihari.com', v_admin_pwd, 'Factory Admin', '+91 98200 11223', 'factory_admin', v_tenant_id)
     RETURNING id INTO v_admin_id;
-
-    INSERT INTO users (email, password_hash, full_name, phone, role, tenant_id)
-    VALUES 
-    ('supervisor@shrihari.com', '$argon2id$v=19$m=65536,t=3,p=4$z8X/J7rE7A1g6QpU3K1eg$Vq0W2y1aXbZ9c8d7e6f5g4h3i2j1k0l', 'Vikas Patel', '+91 98200 44556', 'supervisor', v_tenant_id)
-    RETURNING id INTO v_supervisor_id;
-
-    INSERT INTO users (email, password_hash, full_name, phone, role, tenant_id)
-    VALUES 
-    ('operator@shrihari.com', '$argon2id$v=19$m=65536,t=3,p=4$z8X/J7rE7A1g6QpU3K1eg$Vq0W2y1aXbZ9c8d7e6f5g4h3i2j1k0l', 'Suresh Kumar', '+91 98200 77889', 'operator', v_tenant_id)
-    RETURNING id INTO v_operator_id;
-
-    -- 3. Insert Suppliers
-    INSERT INTO suppliers (tenant_id, code, name, contact_person, phone, email, address)
-    VALUES 
-    (v_tenant_id, 'SUP-REL-01', 'Reliance Petrochemicals Ltd', 'Anand Shah', '+91 22 2288 1000', 'contact@rilpetro.com', 'Mumbai, Maharashtra')
-    RETURNING id INTO v_supp_1;
-
-    INSERT INTO suppliers (tenant_id, code, name, contact_person, phone, email, address)
-    VALUES 
-    (v_tenant_id, 'SUP-IOC-02', 'Indian Oil Polymers', 'Deepak Verma', '+91 11 2436 1000', 'sales@ioclpolymers.in', 'Panipat, Haryana')
-    RETURNING id INTO v_supp_2;
-
-    -- 4. Insert 10 Initial Plastic Types (INV-01)
-    INSERT INTO materials (tenant_id, code, name, description, standard_unit, min_stock_level_kg)
-    VALUES (v_tenant_id, 'MAT-PLA-A', 'Plastic Type A (HDPE Film Grade)', 'High-Density Polyethylene for high-tensile packaging film', 'kg', 500.0000)
-    RETURNING id INTO v_mat_a;
-
-    INSERT INTO materials (tenant_id, code, name, description, standard_unit, min_stock_level_kg)
-    VALUES (v_tenant_id, 'MAT-PLA-B', 'Plastic Type B (LDPE Standard)', 'Low-Density Polyethylene for flexibility and gloss', 'kg', 500.0000)
-    RETURNING id INTO v_mat_b;
-
-    INSERT INTO materials (tenant_id, code, name, description, standard_unit, min_stock_level_kg)
-    VALUES (v_tenant_id, 'MAT-PLA-C', 'Plastic Type C (LLDPE Hexene)', 'Linear Low-Density for puncture resistance', 'kg', 400.0000)
-    RETURNING id INTO v_mat_c;
-
-    INSERT INTO materials (tenant_id, code, name, description, standard_unit, min_stock_level_kg)
-    VALUES (v_tenant_id, 'MAT-PLA-D', 'Plastic Type D (PP Homopolymer)', 'Polypropylene for rigid packaging containers', 'kg', 300.0000)
-    RETURNING id INTO v_mat_d;
-
-    INSERT INTO materials (tenant_id, code, name, description, standard_unit, min_stock_level_kg)
-    VALUES (v_tenant_id, 'MAT-PLA-E', 'Plastic Type E (PP Copolymer)', 'Impact-modified copolymer for cold resistance', 'kg', 300.0000)
-    RETURNING id INTO v_mat_e;
-
-    INSERT INTO materials (tenant_id, code, name, description, standard_unit, min_stock_level_kg)
-    VALUES (v_tenant_id, 'MAT-PLA-F', 'Plastic Type F (Virgin PET Resin)', 'Polyethylene Terephthalate for clear bottle preforms', 'kg', 250.0000)
-    RETURNING id INTO v_mat_f;
-
-    INSERT INTO materials (tenant_id, code, name, description, standard_unit, min_stock_level_kg)
-    VALUES (v_tenant_id, 'MAT-PLA-G', 'Plastic Type G (EVA Copolymer)', 'Ethylene Vinyl Acetate for low-temp sealing layers', 'kg', 200.0000)
-    RETURNING id INTO v_mat_g;
-
-    INSERT INTO materials (tenant_id, code, name, description, standard_unit, min_stock_level_kg)
-    VALUES (v_tenant_id, 'MAT-PLA-H', 'Plastic Type H (Biodegradable PLA)', 'Polylactic Acid eco-polymer compound', 'kg', 150.0000)
-    RETURNING id INTO v_mat_h;
-
-    INSERT INTO materials (tenant_id, code, name, description, standard_unit, min_stock_level_kg)
-    VALUES (v_tenant_id, 'MAT-PLA-I', 'Plastic Type I (Masterbatch White)', 'Titanium dioxide 70% opacity masterbatch', 'kg', 100.0000)
-    RETURNING id INTO v_mat_i;
-
-    INSERT INTO materials (tenant_id, code, name, description, standard_unit, min_stock_level_kg)
-    VALUES (v_tenant_id, 'MAT-PLA-J', 'Plastic Type J (UV Stabilizer Compound)', 'Hindered Amine Light Stabilizer (HALS) pellets', 'kg', 50.0000)
-    RETURNING id INTO v_mat_j;
-
-    -- 5. Insert Initial Material Batches (INV-03, INV-04)
-    INSERT INTO material_batches (tenant_id, material_id, supplier_id, batch_number, supplier_lot_number, receipt_date, received_quantity_kg, remaining_quantity_kg, cost_per_kg, status, created_by)
-    VALUES 
-    (v_tenant_id, v_mat_a, v_supp_1, 'MB-20261001-A1', 'RIL-HDPE-9901', CURRENT_DATE - 10, 2500.0000, 2500.0000, 115.50, 'available', v_admin_id),
-    (v_tenant_id, v_mat_b, v_supp_1, 'MB-20261001-B1', 'RIL-LDPE-4421', CURRENT_DATE - 10, 2000.0000, 2000.0000, 108.00, 'available', v_admin_id),
-    (v_tenant_id, v_mat_c, v_supp_2, 'MB-20261003-C1', 'IOC-LLD-1190', CURRENT_DATE - 8, 1500.0000, 1500.0000, 112.00, 'available', v_admin_id),
-    (v_tenant_id, v_mat_d, v_supp_2, 'MB-20261005-D1', 'IOC-PP-8820', CURRENT_DATE - 6, 1200.0000, 1200.0000, 104.00, 'available', v_admin_id);
-
-    -- 6. Insert Customers
-    INSERT INTO customers (tenant_id, code, name, contact_person, phone, email, billing_address, delivery_address)
-    VALUES 
-    (v_tenant_id, 'CUST-AMUL-01', 'Gujarat Cooperative Milk Federation (Amul)', 'Prakash Jha', '+91 2692 258506', 'procurement@amul.coop', 'Amul Dairy Road, Anand, Gujarat', 'Amul Packaging Hub, Kheda, Gujarat')
-    RETURNING id INTO v_cust_1;
-
-    INSERT INTO customers (tenant_id, code, name, contact_person, phone, email, billing_address, delivery_address)
-    VALUES 
-    (v_tenant_id, 'CUST-PARLE-02', 'Parle Agro Products Pvt Ltd', 'Ramesh Rao', '+91 22 6734 8000', 'materials@parleagro.com', 'Sahar Road, Andheri East, Mumbai', 'Parle Agro Factory, Silvassa')
-    RETURNING id INTO v_cust_2;
-
-    -- 7. Insert Finished Products
-    INSERT INTO products (tenant_id, code, name, description, unit, standard_weight_kg)
-    VALUES 
-    (v_tenant_id, 'PRD-MILK-POUCH-500ML', 'Multi-Layer Co-Extruded Milk Pouch Film 500ml', '3-layer co-extruded barrier film roll with puncture resistance', 'kg', 1.0000)
-    RETURNING id INTO v_prod_1;
-
-    INSERT INTO products (tenant_id, code, name, description, unit, standard_weight_kg)
-    VALUES 
-    (v_tenant_id, 'PRD-SHRINK-FILM-100U', 'Heavy Duty Industrial Shrink Wrap Film 100 Micron', 'High dart impact pallet wrapping film', 'kg', 1.0000)
-    RETURNING id INTO v_prod_2;
-
-    -- 8. Insert Product Recipes (PRD-03, PRD-04)
-    -- Recipe 1: Milk Film -> 50% Type A, 30% Type B, 20% Type D
-    INSERT INTO product_recipes (tenant_id, product_id, version, effective_date, is_active, notes, created_by)
-    VALUES (v_tenant_id, v_prod_1, 1, CURRENT_DATE, TRUE, 'Standard 3-Layer formulation: 50% A, 30% B, 20% D', v_admin_id)
-    RETURNING id INTO v_rec_1;
-
-    INSERT INTO product_recipe_items (recipe_id, material_id, percentage, planned_kg_per_kg_output)
-    VALUES 
-    (v_rec_1, v_mat_a, 50.000, 0.500000),
-    (v_rec_1, v_mat_b, 30.000, 0.300000),
-    (v_rec_1, v_mat_d, 20.000, 0.200000);
-
-    -- Recipe 2: Shrink Film -> 60% Type A, 40% Type C
-    INSERT INTO product_recipes (tenant_id, product_id, version, effective_date, is_active, notes, created_by)
-    VALUES (v_tenant_id, v_prod_2, 1, CURRENT_DATE, TRUE, 'High tensile shrink recipe: 60% A, 40% C', v_admin_id)
-    RETURNING id INTO v_rec_2;
-
-    INSERT INTO product_recipe_items (recipe_id, material_id, percentage, planned_kg_per_kg_output)
-    VALUES 
-    (v_rec_2, v_mat_a, 60.000, 0.600000),
-    (v_rec_2, v_mat_c, 40.000, 0.400000);
 
 END $$;

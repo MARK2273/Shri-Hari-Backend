@@ -7,40 +7,7 @@ export const getProducts = async (req: Request, res: Response) => {
     const tenantId = req.tenantId;
 
     if (!isSupabaseConfigured) {
-      return res.json({
-        success: true,
-        products: [
-          {
-            id: 'prd-1',
-            code: 'PRD-MILK-POUCH-500ML',
-            name: 'Multi-Layer Co-Extruded Milk Pouch Film 500ml',
-            unit: 'kg',
-            is_active: true,
-            active_recipe: {
-              version: 1,
-              items: [
-                { material_name: 'Plastic Type A (HDPE Film Grade)', percentage: 50, planned_kg_per_kg_output: 0.5 },
-                { material_name: 'Plastic Type B (LDPE Standard)', percentage: 30, planned_kg_per_kg_output: 0.3 },
-                { material_name: 'Plastic Type D (PP Homopolymer)', percentage: 20, planned_kg_per_kg_output: 0.2 }
-              ]
-            }
-          },
-          {
-            id: 'prd-2',
-            code: 'PRD-SHRINK-FILM-100U',
-            name: 'Heavy Duty Industrial Shrink Wrap Film 100 Micron',
-            unit: 'kg',
-            is_active: true,
-            active_recipe: {
-              version: 1,
-              items: [
-                { material_name: 'Plastic Type A (HDPE Film Grade)', percentage: 60, planned_kg_per_kg_output: 0.6 },
-                { material_name: 'Plastic Type C (LLDPE Hexene)', percentage: 40, planned_kg_per_kg_output: 0.4 }
-              ]
-            }
-          }
-        ]
-      });
+      return res.json({ success: true, products: [] });
     }
 
     const { data: products, error } = await supabase

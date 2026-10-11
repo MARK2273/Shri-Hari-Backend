@@ -8,28 +8,8 @@ export const getFinishedGoodsInventory = async (req: Request, res: Response) => 
     if (!isSupabaseConfigured) {
       return res.json({
         success: true,
-        summary: [
-          {
-            product_id: 'prd-1',
-            product_code: 'PRD-MILK-POUCH-500ML',
-            product_name: 'Multi-Layer Co-Extruded Milk Pouch Film 500ml',
-            total_on_hand_kg: 194.0,
-            total_reserved_kg: 0.0,
-            available_kg: 194.0
-          }
-        ],
-        batches: [
-          {
-            id: 'fg-1',
-            batch_number: 'FG-PB-20261011-001',
-            product_code: 'PRD-MILK-POUCH-500ML',
-            production_batch_number: 'PB-20261011-001',
-            quantity_produced_kg: 194.0,
-            quantity_on_hand_kg: 194.0,
-            quantity_dispatched_kg: 0.0,
-            status: 'in_stock'
-          }
-        ]
+        summary: [],
+        batches: []
       });
     }
 

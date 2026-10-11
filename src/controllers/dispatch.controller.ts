@@ -8,27 +8,7 @@ export const getDeliveries = async (req: Request, res: Response) => {
     const tenantId = req.tenantId;
 
     if (!isSupabaseConfigured) {
-      return res.json({
-        success: true,
-        deliveries: [
-          {
-            id: 'del-1',
-            delivery_number: 'DEL-20261011-001',
-            order_number: 'ORD-20261011-001',
-            customer_name: 'Gujarat Cooperative Milk Federation (Amul)',
-            dispatch_date: '2026-10-11T12:00:00Z',
-            status: 'confirmed',
-            destination_address: 'Amul Packaging Hub, Kheda, Gujarat',
-            vehicle_number: 'GJ-01-AB-1234',
-            items: [
-              {
-                product_name: 'Multi-Layer Co-Extruded Milk Pouch Film 500ml',
-                quantity_kg: 194.0
-              }
-            ]
-          }
-        ]
-      });
+      return res.json({ success: true, deliveries: [] });
     }
 
     const { data: deliveries, error } = await supabase

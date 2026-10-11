@@ -8,32 +8,7 @@ export const getOrders = async (req: Request, res: Response) => {
     const tenantId = req.tenantId;
 
     if (!isSupabaseConfigured) {
-      return res.json({
-        success: true,
-        orders: [
-          {
-            id: 'ord-1',
-            order_number: 'ORD-20261011-001',
-            customer_name: 'Gujarat Cooperative Milk Federation (Amul)',
-            order_date: '2026-10-11',
-            required_delivery_date: '2026-10-18',
-            status: 'confirmed',
-            total_requested_weight_kg: 500.0,
-            items: [
-              {
-                id: 'item-1',
-                product_id: 'prd-1',
-                product_code: 'PRD-MILK-POUCH-500ML',
-                product_name: 'Multi-Layer Co-Extruded Milk Pouch Film 500ml',
-                requested_quantity_kg: 500.0,
-                produced_quantity_kg: 200.0,
-                dispatched_quantity_kg: 0.0,
-                status: 'in_production'
-              }
-            ]
-          }
-        ]
-      });
+      return res.json({ success: true, orders: [] });
     }
 
     const { data: orders, error } = await supabase
@@ -152,13 +127,7 @@ export const getCustomers = async (req: Request, res: Response) => {
     const tenantId = req.tenantId;
 
     if (!isSupabaseConfigured) {
-      return res.json({
-        success: true,
-        customers: [
-          { id: 'cust-1', code: 'CUST-AMUL-01', name: 'Gujarat Cooperative Milk Federation (Amul)', contact_person: 'Prakash Jha', phone: '+91 2692 258506', email: 'procurement@amul.coop' },
-          { id: 'cust-2', code: 'CUST-PARLE-02', name: 'Parle Agro Products Pvt Ltd', contact_person: 'Ramesh Rao', phone: '+91 22 6734 8000', email: 'materials@parleagro.com' }
-        ]
-      });
+      return res.json({ success: true, customers: [] });
     }
 
     const { data: customers, error } = await supabase

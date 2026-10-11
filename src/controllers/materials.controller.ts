@@ -8,20 +8,7 @@ export const getMaterials = async (req: Request, res: Response) => {
     const tenantId = req.tenantId;
 
     if (!isSupabaseConfigured) {
-      // Mock materials Type A to J
-      const mockMaterials = [
-        { id: 'mat-1', code: 'MAT-PLA-A', name: 'Plastic Type A (HDPE Film Grade)', standard_unit: 'kg', min_stock_level_kg: 500, total_stock_kg: 2500, status: 'active', is_low_stock: false },
-        { id: 'mat-2', code: 'MAT-PLA-B', name: 'Plastic Type B (LDPE Standard)', standard_unit: 'kg', min_stock_level_kg: 500, total_stock_kg: 2000, status: 'active', is_low_stock: false },
-        { id: 'mat-3', code: 'MAT-PLA-C', name: 'Plastic Type C (LLDPE Hexene)', standard_unit: 'kg', min_stock_level_kg: 400, total_stock_kg: 1500, status: 'active', is_low_stock: false },
-        { id: 'mat-4', code: 'MAT-PLA-D', name: 'Plastic Type D (PP Homopolymer)', standard_unit: 'kg', min_stock_level_kg: 300, total_stock_kg: 1200, status: 'active', is_low_stock: false },
-        { id: 'mat-5', code: 'MAT-PLA-E', name: 'Plastic Type E (PP Copolymer)', standard_unit: 'kg', min_stock_level_kg: 300, total_stock_kg: 450, status: 'active', is_low_stock: false },
-        { id: 'mat-6', code: 'MAT-PLA-F', name: 'Plastic Type F (Virgin PET Resin)', standard_unit: 'kg', min_stock_level_kg: 250, total_stock_kg: 180, status: 'active', is_low_stock: true },
-        { id: 'mat-7', code: 'MAT-PLA-G', name: 'Plastic Type G (EVA Copolymer)', standard_unit: 'kg', min_stock_level_kg: 200, total_stock_kg: 320, status: 'active', is_low_stock: false },
-        { id: 'mat-8', code: 'MAT-PLA-H', name: 'Plastic Type H (Biodegradable PLA)', standard_unit: 'kg', min_stock_level_kg: 150, total_stock_kg: 90, status: 'active', is_low_stock: true },
-        { id: 'mat-9', code: 'MAT-PLA-I', name: 'Plastic Type I (Masterbatch White)', standard_unit: 'kg', min_stock_level_kg: 100, total_stock_kg: 400, status: 'active', is_low_stock: false },
-        { id: 'mat-10', code: 'MAT-PLA-J', name: 'Plastic Type J (UV Stabilizer Compound)', standard_unit: 'kg', min_stock_level_kg: 50, total_stock_kg: 85, status: 'active', is_low_stock: false }
-      ];
-      return res.json({ success: true, materials: mockMaterials });
+      return res.json({ success: true, materials: [] });
     }
 
     const { data: materials, error: matError } = await supabase
@@ -113,35 +100,7 @@ export const getMaterialBatches = async (req: Request, res: Response) => {
     const { materialId, status } = req.query;
 
     if (!isSupabaseConfigured) {
-      const mockBatches = [
-        {
-          id: 'mb-1',
-          batch_number: 'MB-20261001-A1',
-          material_id: 'mat-1',
-          material_code: 'MAT-PLA-A',
-          material_name: 'Plastic Type A (HDPE Film Grade)',
-          supplier_name: 'Reliance Petrochemicals Ltd',
-          supplier_lot_number: 'RIL-HDPE-9901',
-          receipt_date: '2026-10-01',
-          received_quantity_kg: 2500,
-          remaining_quantity_kg: 2500,
-          status: 'available'
-        },
-        {
-          id: 'mb-2',
-          batch_number: 'MB-20261001-B1',
-          material_id: 'mat-2',
-          material_code: 'MAT-PLA-B',
-          material_name: 'Plastic Type B (LDPE Standard)',
-          supplier_name: 'Reliance Petrochemicals Ltd',
-          supplier_lot_number: 'RIL-LDPE-4421',
-          receipt_date: '2026-10-01',
-          received_quantity_kg: 2000,
-          remaining_quantity_kg: 2000,
-          status: 'available'
-        }
-      ];
-      return res.json({ success: true, batches: mockBatches });
+      return res.json({ success: true, batches: [] });
     }
 
     let query = supabase

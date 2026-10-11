@@ -17,17 +17,16 @@ export const login = async (req: Request, res: Response) => {
     const resolvedTenantSlug = tenantSlug || tenantId || (req.headers['x-tenant-id'] as string) || process.env.DEFAULT_TENANT_SLUG || 'shri-hari-pack';
 
     if (!isSupabaseConfigured) {
-      // Development mode fallback when Supabase keys are pending
-      if (email.includes('shrihari.com') && (password === 'Admin@123' || password === 'admin')) {
+      // Single Admin login (admin@shrihari.com / Admin@123)
+      if (email === 'admin@shrihari.com' && (password === 'Admin@123' || password === 'admin')) {
         const mockTenantId = '11111111-1111-1111-1111-111111111111';
-        const role = email.startsWith('admin') ? 'factory_admin' : email.startsWith('supervisor') ? 'supervisor' : 'operator';
         const token = jwt.sign(
           {
             id: '22222222-2222-2222-2222-222222222222',
-            email,
+            email: 'admin@shrihari.com',
             tenant_id: mockTenantId,
-            role,
-            full_name: email.split('@')[0].toUpperCase()
+            role: 'factory_admin',
+            full_name: 'Factory Admin'
           },
           process.env.JWT_SECRET || 'shri_hari_packaging_secret_jwt_key_2026_super_secure!',
           { expiresIn: '7d' }
@@ -37,11 +36,11 @@ export const login = async (req: Request, res: Response) => {
           token,
           user: {
             id: '22222222-2222-2222-2222-222222222222',
-            email,
-            full_name: email.split('@')[0].toUpperCase(),
-            role,
+            email: 'admin@shrihari.com',
+            full_name: 'Factory Admin',
+            role: 'factory_admin',
             tenant_id: mockTenantId,
-            tenant_name: 'Shri Hari Packaging Factory (Dev Mode)'
+            tenant_name: 'Shri Hari Packaging Factory'
           }
         });
       }
@@ -164,9 +163,7 @@ export const listUsers = async (req: Request, res: Response) => {
       return res.json({
         success: true,
         users: [
-          { id: '1', email: 'admin@shrihari.com', full_name: 'Rajesh Mehta', role: 'factory_admin', is_active: true },
-          { id: '2', email: 'supervisor@shrihari.com', full_name: 'Vikas Patel', role: 'supervisor', is_active: true },
-          { id: '3', email: 'operator@shrihari.com', full_name: 'Suresh Kumar', role: 'operator', is_active: true }
+          { id: '22222222-2222-2222-2222-222222222222', email: 'admin@shrihari.com', full_name: 'Factory Admin', role: 'factory_admin', is_active: true }
         ]
       });
     }

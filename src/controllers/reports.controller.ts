@@ -7,28 +7,7 @@ export const getProductionVarianceReport = async (req: Request, res: Response) =
     const tenantId = req.tenantId;
 
     if (!isSupabaseConfigured) {
-      return res.json({
-        success: true,
-        report: [
-          {
-            batch_number: 'PB-20261011-001',
-            product_name: 'Multi-Layer Co-Extruded Milk Pouch Film 500ml',
-            planned_input_kg: 200.0,
-            actual_input_kg: 200.0,
-            accepted_output_kg: 194.0,
-            waste_kg: 6.0,
-            rejected_kg: 0.0,
-            input_variance_kg: 0.0,
-            yield_percentage: 97.0,
-            waste_percentage: 3.0,
-            materials: [
-              { material_name: 'Plastic Type A', planned_kg: 100.0, actual_kg: 102.0, variance_kg: 2.0 },
-              { material_name: 'Plastic Type B', planned_kg: 60.0, actual_kg: 58.0, variance_kg: -2.0 },
-              { material_name: 'Plastic Type D', planned_kg: 40.0, actual_kg: 40.0, variance_kg: 0.0 }
-            ]
-          }
-        ]
-      });
+      return res.json({ success: true, report: [] });
     }
 
     const { data: batches, error } = await supabase
@@ -92,10 +71,8 @@ export const getWasteReport = async (req: Request, res: Response) => {
     if (!isSupabaseConfigured) {
       return res.json({
         success: true,
-        summary: { total_waste_kg: 6.0, total_rejected_kg: 0.0, total_accepted_kg: 194.0 },
-        records: [
-          { batch_number: 'PB-20261011-001', product_name: 'Milk Pouch Film', accepted_kg: 194.0, waste_kg: 6.0, rejected_kg: 0.0, recorded_at: '2026-10-11T11:30:00Z' }
-        ]
+        summary: { total_waste_kg: 0, total_rejected_kg: 0, total_accepted_kg: 0 },
+        records: []
       });
     }
 
@@ -152,15 +129,7 @@ export const getAuditLogs = async (req: Request, res: Response) => {
     const tenantId = req.tenantId;
 
     if (!isSupabaseConfigured) {
-      return res.json({
-        success: true,
-        logs: [
-          { id: '1', action: 'RECEIVE_MATERIAL_BATCH', entity_name: 'material_batches', created_at: '2026-10-11T09:00:00Z', user_email: 'admin@shrihari.com' },
-          { id: '2', action: 'CREATE_CUSTOMER_ORDER', entity_name: 'customer_orders', created_at: '2026-10-11T09:30:00Z', user_email: 'admin@shrihari.com' },
-          { id: '3', action: 'CONFIRM_PRODUCTION_BATCH', entity_name: 'production_batches', created_at: '2026-10-11T11:30:00Z', user_email: 'supervisor@shrihari.com' },
-          { id: '4', action: 'CONFIRM_DISPATCH', entity_name: 'deliveries', created_at: '2026-10-11T12:00:00Z', user_email: 'admin@shrihari.com' }
-        ]
-      });
+      return res.json({ success: true, logs: [] });
     }
 
     const { data: logs, error } = await supabase
