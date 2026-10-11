@@ -1,0 +1,31 @@
+{
+  "name": "shri-hari-packaging-backend",
+  "version": "1.0.0",
+  "main": "dist/index.js",
+  "scripts": {
+    "dev": "ts-node-dev --respawn --transpile-only src/index.ts",
+    "build": "tsc",
+    "start": "node dist/index.js"
+  },
+  "keywords": ["erp", "packaging", "plastic-manufacturing", "multi-tenant", "batch-inventory"],
+  "author": "",
+  "license": "ISC",
+  "description": "Multi-tenant ERP backend for Shri Hari Packaging with batch-level raw plastic tracking & order-driven production",
+  "dependencies": {
+    "@supabase/supabase-js": "^2.49.1",
+    "argon2": "^0.41.1",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "jsonwebtoken": "^9.0.2",
+    "zod": "^3.24.2"
+  },
+  "devDependencies": {
+    "@types/cors": "^2.8.17",
+    "@types/express": "^4.17.21",
+    "@types/jsonwebtoken": "^9.0.9",
+    "@types/node": "^22.13.9",
+    "ts-node-dev": "^2.0.0",
+    "typescript": "^5.8.2"
+  }
+}
