@@ -39,7 +39,7 @@
       "supplier_lot_number": null,
       "receipt_date": "2026-10-11",
       "received_quantity_kg": 500,
-      "remaining_quantity_kg": 460,
+      "remaining_quantity_kg": 500,
       "cost_per_kg": 500,
       "status": "available",
       "notes": "Test For Type B",
@@ -62,7 +62,7 @@
       "supplier_lot_number": "Test B",
       "receipt_date": "2026-10-11",
       "received_quantity_kg": 1000,
-      "remaining_quantity_kg": 340,
+      "remaining_quantity_kg": 500,
       "cost_per_kg": 800,
       "status": "available",
       "notes": "Test For Type A",
@@ -216,7 +216,7 @@
       "order_number": "ORD-20261011-543",
       "order_date": "2026-10-11",
       "required_delivery_date": "2026-10-18",
-      "status": "in_production",
+      "status": "confirmed",
       "total_requested_weight_kg": 200,
       "notes": "Test",
       "created_by": "22222222-2222-2222-2222-222222222222",
@@ -228,9 +228,9 @@
           "product_id": "8343df04-99c6-4fc8-b568-e29c37c6f12f",
           "requested_quantity_kg": 200,
           "planned_quantity_kg": 200,
-          "produced_quantity_kg": 194,
+          "produced_quantity_kg": 0,
           "dispatched_quantity_kg": 0,
-          "status": "in_production"
+          "status": "pending"
         }
       ],
       "customers": {
@@ -243,162 +243,7 @@
       }
     }
   ],
-  "productionBatches": [
-    {
-      "id": "pb-1791721023848",
-      "tenant_id": "11111111-1111-1111-1111-111111111111",
-      "order_id": "a5845d09-7aa6-430f-8248-c3a571465a8d",
-      "order_item_id": "2eb118d6-9059-490d-b8f1-69abcfac7708",
-      "product_id": "8343df04-99c6-4fc8-b568-e29c37c6f12f",
-      "recipe_id": "8a6a3af6-fd6b-47cb-adc1-6687cb022aa1",
-      "batch_number": "PB-20261011-356",
-      "planned_quantity_kg": 200,
-      "status": "draft",
-      "operator_id": "22222222-2222-2222-2222-222222222222",
-      "start_time": "2026-10-11T12:17:03.849Z",
-      "notes": "",
-      "created_at": "2026-10-11T12:17:03.849Z",
-      "customer_orders": {
-        "id": "a5845d09-7aa6-430f-8248-c3a571465a8d",
-        "order_number": "ORD-20261011-543",
-        "customers": {
-          "name": "Customer 1"
-        }
-      },
-      "products": {
-        "id": "8343df04-99c6-4fc8-b568-e29c37c6f12f",
-        "code": "PRD-9631",
-        "name": "Product 1",
-        "unit": "kg"
-      },
-      "product_recipes": {
-        "id": "8a6a3af6-fd6b-47cb-adc1-6687cb022aa1",
-        "version": 1
-      },
-      "production_material_consumption": [],
-      "production_outputs": []
-    },
-    {
-      "id": "pb-1791720940234",
-      "tenant_id": "11111111-1111-1111-1111-111111111111",
-      "order_id": "a5845d09-7aa6-430f-8248-c3a571465a8d",
-      "order_item_id": "2eb118d6-9059-490d-b8f1-69abcfac7708",
-      "product_id": "8343df04-99c6-4fc8-b568-e29c37c6f12f",
-      "recipe_id": "8a6a3af6-fd6b-47cb-adc1-6687cb022aa1",
-      "batch_number": "PB-20261011-763",
-      "planned_quantity_kg": 200,
-      "status": "draft",
-      "operator_id": "22222222-2222-2222-2222-222222222222",
-      "start_time": "2026-10-11T12:15:40.241Z",
-      "notes": "",
-      "created_at": "2026-10-11T12:15:40.241Z",
-      "customer_orders": {
-        "id": "a5845d09-7aa6-430f-8248-c3a571465a8d",
-        "order_number": "ORD-20261011-543",
-        "customers": {
-          "name": "Customer 1"
-        }
-      },
-      "products": {
-        "id": "8343df04-99c6-4fc8-b568-e29c37c6f12f",
-        "code": "PRD-9631",
-        "name": "Product 1",
-        "unit": "kg"
-      },
-      "product_recipes": {
-        "id": "8a6a3af6-fd6b-47cb-adc1-6687cb022aa1",
-        "version": 1
-      },
-      "production_material_consumption": [],
-      "production_outputs": []
-    },
-    {
-      "id": "pb-1791720772329",
-      "tenant_id": "11111111-1111-1111-1111-111111111111",
-      "order_id": "a5845d09-7aa6-430f-8248-c3a571465a8d",
-      "order_item_id": "2eb118d6-9059-490d-b8f1-69abcfac7708",
-      "product_id": "8343df04-99c6-4fc8-b568-e29c37c6f12f",
-      "recipe_id": "8a6a3af6-fd6b-47cb-adc1-6687cb022aa1",
-      "batch_number": "PB-20261011-573",
-      "planned_quantity_kg": 200,
-      "status": "completed",
-      "operator_id": "22222222-2222-2222-2222-222222222222",
-      "start_time": "2026-10-11T12:12:52.329Z",
-      "created_at": "2026-10-11T12:12:52.329Z",
-      "customer_orders": {
-        "id": "a5845d09-7aa6-430f-8248-c3a571465a8d",
-        "order_number": "ORD-20261011-543",
-        "customers": {
-          "name": "Customer 1"
-        }
-      },
-      "products": {
-        "id": "8343df04-99c6-4fc8-b568-e29c37c6f12f",
-        "code": "PRD-9631",
-        "name": "Product 1",
-        "unit": "kg"
-      },
-      "product_recipes": {
-        "id": "8a6a3af6-fd6b-47cb-adc1-6687cb022aa1",
-        "version": 1
-      },
-      "production_material_consumption": [
-        {
-          "id": "pmc-1791720785822-0.25000203527639075",
-          "material_id": "fcbb90be-ee0e-4d97-a67c-dd8f1469f3be",
-          "material_batch_id": "966e5a32-f1c7-468d-afdf-a204ccf908ab",
-          "planned_quantity_kg": 160,
-          "actual_quantity_kg": 160,
-          "materials": {
-            "code": "MAT-3033",
-            "name": "Type A"
-          },
-          "material_batches": {
-            "batch_number": "MB-20261011-850",
-            "supplier_lot_number": "Test B"
-          }
-        },
-        {
-          "id": "pmc-1791720785822-0.15677534728571896",
-          "material_id": "33f82c12-fcea-4cfe-9015-b8cd03b9d2e8",
-          "material_batch_id": "0cca5419-2d06-482a-b8d9-3aafab023e53",
-          "planned_quantity_kg": 40,
-          "actual_quantity_kg": 40,
-          "materials": {
-            "code": "MAT-8493",
-            "name": "Type B"
-          },
-          "material_batches": {
-            "batch_number": "MB-20261011-734",
-            "supplier_lot_number": null
-          }
-        }
-      ],
-      "production_outputs": [
-        {
-          "id": "out-1791720785822",
-          "accepted_kg": 194,
-          "waste_kg": 6,
-          "rejected_kg": 0,
-          "recorded_at": "2026-10-11T12:13:05.822Z"
-        }
-      ],
-      "end_time": "2026-10-11T12:13:05.822Z"
-    }
-  ],
-  "fgBatches": [
-    {
-      "id": "fg-1791720785822",
-      "tenant_id": "11111111-1111-1111-1111-111111111111",
-      "product_id": "8343df04-99c6-4fc8-b568-e29c37c6f12f",
-      "production_batch_id": "pb-1791720772329",
-      "batch_number": "FG-20261011-573",
-      "quantity_on_hand_kg": 194,
-      "quantity_reserved_kg": 0,
-      "quantity_dispatched_kg": 0,
-      "status": "available",
-      "created_at": "2026-10-11T12:13:05.822Z"
-    }
-  ],
+  "productionBatches": [],
+  "fgBatches": [],
   "deliveries": []
 }
