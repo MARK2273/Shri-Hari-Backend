@@ -7,12 +7,14 @@ import { z } from 'zod';
 const loginSchema = z.object({
   email: z.string().email(),
   password: z.string().min(1),
-  tenantSlug: z.string().optional() // e.g. 'shri-hari-pack'
+  tenantSlug: z.string().optional(),
+  tenantId: z.string().optional()
 });
 
 export const login = async (req: Request, res: Response) => {
   try {
-    const { email, password, tenantSlug } = loginSchema.parse(req.body);
+    const { email, password, tenantSlug, tenantId } = loginSchema.parse(req.body);
+    const resolvedTenantSlug = tenantSlug || tenantId || (req.headers['x-tenant-id'] as string) || process.env.DEFAULT_TENANT_SLUG || 'shri-hari-pack';
 
     if (!isSupabaseConfigured) {
       // Development mode fallback when Supabase keys are pending
@@ -62,11 +64,11 @@ export const login = async (req: Request, res: Response) => {
     }
 
     // Tenant verification
-    if (tenantSlug && user.role !== 'platform_admin') {
-      if (user.tenants?.tenant_id !== tenantSlug) {
+    if (resolvedTenantSlug && user.role !== 'platform_admin') {
+      if (user.tenants?.tenant_id !== resolvedTenantSlug) {
         return res.status(403).json({
           success: false,
-          message: `User does not belong to factory '${tenantSlug}'.`
+          message: `User does not belong to factory '${resolvedTenantSlug}'.`
         });
       }
     }
