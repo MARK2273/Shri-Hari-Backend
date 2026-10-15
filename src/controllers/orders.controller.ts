@@ -30,6 +30,8 @@ interface InMemOrderItem {
   notes?: string;
   grade?: string;
   size_micron?: string;
+  selling_price_per_kg?: number;
+  recipe_cost_per_kg?: number;
 }
 
 interface InMemOrder {
@@ -44,25 +46,52 @@ interface InMemOrder {
   notes?: string;
   grade?: string;
   size_micron?: string;
+  selling_price_per_kg?: number;
+  recipe_cost_per_kg?: number;
+  total_order_value?: number;
   created_by?: string;
   created_at: string;
   customer_order_items: InMemOrderItem[];
 }
 
-export function formatOrderNotes(notes?: string, grade?: string, sizeMicron?: string): string {
-  const meta: { grade?: string; sizeMicron?: string; notes?: string } = {};
+export function formatOrderNotes(
+  notes?: string,
+  grade?: string,
+  sizeMicron?: string,
+  sellingPricePerKg?: number,
+  recipeCostPerKg?: number
+): string {
+  const meta: {
+    grade?: string;
+    sizeMicron?: string;
+    notes?: string;
+    sellingPricePerKg?: number;
+    recipeCostPerKg?: number;
+  } = {};
   if (grade?.trim()) meta.grade = grade.trim();
   if (sizeMicron?.trim()) meta.sizeMicron = sizeMicron.trim();
   if (notes?.trim()) meta.notes = notes.trim();
+  if (sellingPricePerKg !== undefined && Number(sellingPricePerKg) > 0) {
+    meta.sellingPricePerKg = Number(sellingPricePerKg);
+  }
+  if (recipeCostPerKg !== undefined && Number(recipeCostPerKg) > 0) {
+    meta.recipeCostPerKg = Number(recipeCostPerKg);
+  }
 
-  if (!meta.grade && !meta.sizeMicron) {
+  if (!meta.grade && !meta.sizeMicron && !meta.sellingPricePerKg && !meta.recipeCostPerKg) {
     return notes?.trim() || '';
   }
   return JSON.stringify(meta);
 }
 
-export function parseOrderNotes(rawNotes?: string | null): { notes: string; grade: string; sizeMicron: string } {
-  if (!rawNotes) return { notes: '', grade: '', sizeMicron: '' };
+export function parseOrderNotes(rawNotes?: string | null): {
+  notes: string;
+  grade: string;
+  sizeMicron: string;
+  sellingPricePerKg: number;
+  recipeCostPerKg: number;
+} {
+  if (!rawNotes) return { notes: '', grade: '', sizeMicron: '', sellingPricePerKg: 0, recipeCostPerKg: 0 };
   try {
     if (rawNotes.trim().startsWith('{')) {
       const parsed = JSON.parse(rawNotes);
@@ -70,6 +99,8 @@ export function parseOrderNotes(rawNotes?: string | null): { notes: string; grad
         notes: parsed.notes || '',
         grade: parsed.grade || '',
         sizeMicron: parsed.sizeMicron || parsed.size_micron || '',
+        sellingPricePerKg: Number(parsed.sellingPricePerKg || parsed.selling_price_per_kg || 0),
+        recipeCostPerKg: Number(parsed.recipeCostPerKg || parsed.recipe_cost_per_kg || 0),
       };
     }
   } catch (e) {
@@ -78,10 +109,15 @@ export function parseOrderNotes(rawNotes?: string | null): { notes: string; grad
 
   const gradeMatch = rawNotes.match(/Grade:\s*([^|\n]+)/i);
   const sizeMatch = rawNotes.match(/(?:Size(?:\s*\/|\s+Micron)?|Micron):\s*([^|\n]+)/i);
+  const sellMatch = rawNotes.match(/(?:Selling\s*Price|Rate):\s*₹?\s*([\d.]+)/i);
+  const costMatch = rawNotes.match(/(?:Cost\s*Price|Recipe\s*Cost):\s*₹?\s*([\d.]+)/i);
+
   return {
     notes: rawNotes,
     grade: gradeMatch ? gradeMatch[1].trim() : '',
     sizeMicron: sizeMatch ? sizeMatch[1].trim() : '',
+    sellingPricePerKg: sellMatch ? parseFloat(sellMatch[1]) : 0,
+    recipeCostPerKg: costMatch ? parseFloat(costMatch[1]) : 0,
   };
 }
 
@@ -102,21 +138,37 @@ export const getOrders = async (req: Request, res: Response) => {
       const enriched = tenantOrders.map((o) => {
         const cust = inMemCustomers.find((c) => c.id === o.customer_id);
         const parsedOrder = parseOrderNotes(o.notes);
+        const orderSellingPrice = o.selling_price_per_kg || parsedOrder.sellingPricePerKg || 0;
+        const orderRecipeCost = o.recipe_cost_per_kg || parsedOrder.recipeCostPerKg || 0;
+
         const enrichedItems = (o.customer_order_items || []).map((it) => {
           const prod = mockStore.products?.find((p) => p.id === it.product_id);
           const parsedItem = parseOrderNotes(it.notes);
+          const itemSellingPrice = it.selling_price_per_kg || parsedItem.sellingPricePerKg || orderSellingPrice || 0;
+          const itemRecipeCost = it.recipe_cost_per_kg || parsedItem.recipeCostPerKg || orderRecipeCost || 0;
           return {
             ...it,
             grade: it.grade || parsedItem.grade || o.grade || parsedOrder.grade,
             size_micron: it.size_micron || parsedItem.sizeMicron || o.size_micron || parsedOrder.sizeMicron,
+            selling_price_per_kg: itemSellingPrice,
+            recipe_cost_per_kg: itemRecipeCost,
             notes: parsedItem.notes || it.notes,
             products: prod ? { id: prod.id, code: prod.code, name: prod.name, unit: prod.unit } : null,
           };
         });
+
+        const finalSellingPrice = orderSellingPrice || enrichedItems[0]?.selling_price_per_kg || 0;
+        const finalRecipeCost = orderRecipeCost || enrichedItems[0]?.recipe_cost_per_kg || 0;
+        const totalWeight = Number(o.total_requested_weight_kg || 0);
+
         return {
           ...o,
           grade: o.grade || parsedOrder.grade,
           size_micron: o.size_micron || parsedOrder.sizeMicron,
+          selling_price_per_kg: finalSellingPrice,
+          recipe_cost_per_kg: finalRecipeCost,
+          total_order_value: Number((finalSellingPrice * totalWeight).toFixed(2)),
+          total_estimated_cost: Number((finalRecipeCost * totalWeight).toFixed(2)),
           notes: parsedOrder.notes || o.notes,
           customers: cust
             ? {
@@ -152,19 +204,35 @@ export const getOrders = async (req: Request, res: Response) => {
 
     const enrichedSupabaseOrders = (orders || []).map((o: any) => {
       const parsedOrder = parseOrderNotes(o.notes);
+      const orderSellingPrice = parsedOrder.sellingPricePerKg || 0;
+      const orderRecipeCost = parsedOrder.recipeCostPerKg || 0;
+
       const items = (o.customer_order_items || []).map((it: any) => {
         const parsedItem = parseOrderNotes(it.notes);
+        const itemSellingPrice = parsedItem.sellingPricePerKg || orderSellingPrice || 0;
+        const itemRecipeCost = parsedItem.recipeCostPerKg || orderRecipeCost || 0;
         return {
           ...it,
           grade: parsedItem.grade || parsedOrder.grade,
           size_micron: parsedItem.sizeMicron || parsedOrder.sizeMicron,
+          selling_price_per_kg: itemSellingPrice,
+          recipe_cost_per_kg: itemRecipeCost,
           notes: parsedItem.notes || it.notes,
         };
       });
+
+      const finalSellingPrice = orderSellingPrice || items[0]?.selling_price_per_kg || 0;
+      const finalRecipeCost = orderRecipeCost || items[0]?.recipe_cost_per_kg || 0;
+      const totalWeight = Number(o.total_requested_weight_kg || 0);
+
       return {
         ...o,
         grade: parsedOrder.grade,
         size_micron: parsedOrder.sizeMicron,
+        selling_price_per_kg: finalSellingPrice,
+        recipe_cost_per_kg: finalRecipeCost,
+        total_order_value: Number((finalSellingPrice * totalWeight).toFixed(2)),
+        total_estimated_cost: Number((finalRecipeCost * totalWeight).toFixed(2)),
         notes: parsedOrder.notes || o.notes,
         customer_order_items: items,
       };
@@ -188,12 +256,16 @@ export const createOrder = async (req: Request, res: Response) => {
       requiredDeliveryDate: z.string(),
       grade: z.string().optional(),
       sizeMicron: z.string().optional(),
+      sellingPricePerKg: z.number().positive().optional(),
+      recipeCostPerKg: z.number().nonnegative().optional(),
       notes: z.string().optional(),
       items: z
         .array(
           z.object({
             productId: z.string().min(1),
             requestedQuantityKg: z.number().positive(),
+            sellingPricePerKg: z.number().positive().optional(),
+            recipeCostPerKg: z.number().nonnegative().optional(),
             grade: z.string().optional(),
             sizeMicron: z.string().optional(),
             notes: z.string().optional(),
@@ -207,13 +279,17 @@ export const createOrder = async (req: Request, res: Response) => {
     const totalWeight = body.items.reduce((sum, item) => sum + item.requestedQuantityKg, 0);
     const orderGrade = body.grade?.trim() || body.items[0]?.grade?.trim() || '';
     const orderSizeMicron = body.sizeMicron?.trim() || body.items[0]?.sizeMicron?.trim() || '';
-    const formattedHeaderNotes = formatOrderNotes(body.notes, orderGrade, orderSizeMicron);
+    const orderSellingPrice = body.sellingPricePerKg || body.items[0]?.sellingPricePerKg || 0;
+    const orderRecipeCost = body.recipeCostPerKg || body.items[0]?.recipeCostPerKg || 0;
+    const formattedHeaderNotes = formatOrderNotes(body.notes, orderGrade, orderSizeMicron, orderSellingPrice, orderRecipeCost);
 
     if (!isSupabaseConfigured) {
       const orderId = crypto.randomUUID();
       const orderItems: InMemOrderItem[] = body.items.map((it) => {
         const itemGrade = it.grade?.trim() || orderGrade;
         const itemSizeMicron = it.sizeMicron?.trim() || orderSizeMicron;
+        const itemSelling = it.sellingPricePerKg || orderSellingPrice;
+        const itemCost = it.recipeCostPerKg || orderRecipeCost;
         return {
           id: crypto.randomUUID(),
           order_id: orderId,
@@ -225,7 +301,9 @@ export const createOrder = async (req: Request, res: Response) => {
           status: 'pending',
           grade: itemGrade,
           size_micron: itemSizeMicron,
-          notes: formatOrderNotes(it.notes || body.notes, itemGrade, itemSizeMicron),
+          selling_price_per_kg: itemSelling,
+          recipe_cost_per_kg: itemCost,
+          notes: formatOrderNotes(it.notes || body.notes, itemGrade, itemSizeMicron, itemSelling, itemCost),
         };
       });
 
@@ -240,6 +318,9 @@ export const createOrder = async (req: Request, res: Response) => {
         total_requested_weight_kg: totalWeight,
         grade: orderGrade,
         size_micron: orderSizeMicron,
+        selling_price_per_kg: orderSellingPrice,
+        recipe_cost_per_kg: orderRecipeCost,
+        total_order_value: Number((orderSellingPrice * totalWeight).toFixed(2)),
         notes: formattedHeaderNotes,
         created_by: userId,
         created_at: new Date().toISOString(),
@@ -281,13 +362,15 @@ export const createOrder = async (req: Request, res: Response) => {
     const itemsData = body.items.map((item) => {
       const itemGrade = item.grade?.trim() || orderGrade;
       const itemSizeMicron = item.sizeMicron?.trim() || orderSizeMicron;
+      const itemSelling = item.sellingPricePerKg || orderSellingPrice;
+      const itemCost = item.recipeCostPerKg || orderRecipeCost;
       return {
         order_id: order.id,
         product_id: item.productId,
         requested_quantity_kg: item.requestedQuantityKg,
         planned_quantity_kg: item.requestedQuantityKg,
         status: 'pending',
-        notes: formatOrderNotes(item.notes || body.notes, itemGrade, itemSizeMicron),
+        notes: formatOrderNotes(item.notes || body.notes, itemGrade, itemSizeMicron, itemSelling, itemCost),
       };
     });
 

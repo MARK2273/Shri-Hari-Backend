@@ -52,12 +52,30 @@ export const getProducts = async (req: Request, res: Response) => {
 
     if (!isSupabaseConfigured) {
       const tenantProducts = inMemProducts.filter((p) => p.tenant_id === tenantId);
+      const costMap: Record<string, number> = {};
+      inMemBatches.forEach((b: any) => {
+        const cost = Number(b.cost_per_kg);
+        if (cost > 0) {
+          costMap[b.material_id] = cost;
+        }
+      });
+
       const enriched = tenantProducts.map((p) => {
         const recipes = p.product_recipes || [];
         const activeRecipe = recipes.find((r) => r.is_active) || recipes[0] || null;
+        let recipeCost = 0;
+        if (activeRecipe?.product_recipe_items) {
+          recipeCost = activeRecipe.product_recipe_items.reduce((sum: number, it: any) => {
+            const cost = costMap[it.material_id] || 0;
+            return sum + ((Number(it.percentage) || 0) / 100) * cost;
+          }, 0);
+        }
         return {
           ...p,
-          active_recipe: activeRecipe,
+          recipe_cost_per_kg: Number(recipeCost.toFixed(2)),
+          active_recipe: activeRecipe
+            ? { ...activeRecipe, recipe_cost_per_kg: Number(recipeCost.toFixed(2)) }
+            : null,
         };
       });
       return res.json({ success: true, products: enriched });
@@ -80,12 +98,35 @@ export const getProducts = async (req: Request, res: Response) => {
 
     if (error) throw error;
 
-    // Map to include latest active recipe
+    // Fetch batch costs to calculate recipe formulation cost
+    const { data: batches } = await supabase
+      .from('material_batches')
+      .select('material_id, cost_per_kg')
+      .eq('tenant_id', tenantId)
+      .gt('cost_per_kg', 0);
+
+    const costMap: Record<string, number> = {};
+    (batches || []).forEach((b: any) => {
+      const cost = Number(b.cost_per_kg);
+      if (cost > 0) costMap[b.material_id] = cost;
+    });
+
+    // Map to include latest active recipe and calculated formulation cost
     const enriched = products.map((p: any) => {
       const activeRecipe = (p.product_recipes || []).find((r: any) => r.is_active) || p.product_recipes?.[0] || null;
+      let recipeCost = 0;
+      if (activeRecipe?.product_recipe_items) {
+        recipeCost = activeRecipe.product_recipe_items.reduce((sum: number, it: any) => {
+          const cost = costMap[it.material_id] || 0;
+          return sum + ((Number(it.percentage) || 0) / 100) * cost;
+        }, 0);
+      }
       return {
         ...p,
-        active_recipe: activeRecipe,
+        recipe_cost_per_kg: Number(recipeCost.toFixed(2)),
+        active_recipe: activeRecipe
+          ? { ...activeRecipe, recipe_cost_per_kg: Number(recipeCost.toFixed(2)) }
+          : null,
       };
     });
 
