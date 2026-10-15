@@ -49,17 +49,41 @@ export const getMaterials = async (req: Request, res: Response) => {
     if (!isSupabaseConfigured) {
       const tenantMaterials = inMemMaterials.filter((m) => m.tenant_id === tenantId);
       const stockMap: Record<string, number> = {};
+      const costMap: Record<string, { totalCost: number; totalQty: number; latestCost: number; latestDate: string }> = {};
+
       inMemBatches
-        .filter((b) => b.tenant_id === tenantId && b.status === 'available')
+        .filter((b) => b.tenant_id === tenantId)
         .forEach((b) => {
-          stockMap[b.material_id] = (stockMap[b.material_id] || 0) + Number(b.remaining_quantity_kg);
+          if (b.status === 'available') {
+            stockMap[b.material_id] = (stockMap[b.material_id] || 0) + Number(b.remaining_quantity_kg);
+          }
+          const cost = Number(b.cost_per_kg);
+          if (cost > 0) {
+            const dateStr = b.receipt_date || b.created_at || '';
+            const qty = Number(b.received_quantity_kg) || 1;
+            if (!costMap[b.material_id]) {
+              costMap[b.material_id] = { totalCost: 0, totalQty: 0, latestCost: cost, latestDate: dateStr };
+            }
+            costMap[b.material_id].totalCost += cost * qty;
+            costMap[b.material_id].totalQty += qty;
+            if (dateStr >= costMap[b.material_id].latestDate) {
+              costMap[b.material_id].latestCost = cost;
+              costMap[b.material_id].latestDate = dateStr;
+            }
+          }
         });
 
       const enriched = tenantMaterials.map((m) => {
         const totalStock = stockMap[m.id] || 0;
+        const cInfo = costMap[m.id];
+        const avgCost = cInfo && cInfo.totalQty > 0 ? cInfo.totalCost / cInfo.totalQty : 0;
+        const costPerKg = cInfo?.latestCost || avgCost || 0;
         return {
           ...m,
           total_stock_kg: totalStock,
+          cost_per_kg: Number(costPerKg.toFixed(2)),
+          avg_cost_per_kg: Number(avgCost.toFixed(2)),
+          latest_cost_per_kg: Number((cInfo?.latestCost || 0).toFixed(2)),
           is_low_stock: totalStock < Number(m.min_stock_level_kg),
         };
       });
@@ -75,25 +99,48 @@ export const getMaterials = async (req: Request, res: Response) => {
 
     if (matError) throw matError;
 
-    // Fetch batches to aggregate total remaining stock per material
+    // Fetch batches to aggregate total remaining stock and cost per material
     const { data: batches, error: batchError } = await supabase
       .from('material_batches')
-      .select('material_id, remaining_quantity_kg, status')
-      .eq('tenant_id', tenantId)
-      .eq('status', 'available');
+      .select('material_id, remaining_quantity_kg, received_quantity_kg, cost_per_kg, receipt_date, created_at, status')
+      .eq('tenant_id', tenantId);
 
     if (batchError) throw batchError;
 
     const stockMap: Record<string, number> = {};
+    const costMap: Record<string, { totalCost: number; totalQty: number; latestCost: number; latestDate: string }> = {};
+
     (batches || []).forEach((b: any) => {
-      stockMap[b.material_id] = (stockMap[b.material_id] || 0) + Number(b.remaining_quantity_kg);
+      if (b.status === 'available') {
+        stockMap[b.material_id] = (stockMap[b.material_id] || 0) + Number(b.remaining_quantity_kg);
+      }
+      const cost = Number(b.cost_per_kg);
+      if (cost > 0) {
+        const dateStr = b.receipt_date || b.created_at || '';
+        const qty = Number(b.received_quantity_kg) || 1;
+        if (!costMap[b.material_id]) {
+          costMap[b.material_id] = { totalCost: 0, totalQty: 0, latestCost: cost, latestDate: dateStr };
+        }
+        costMap[b.material_id].totalCost += cost * qty;
+        costMap[b.material_id].totalQty += qty;
+        if (dateStr >= costMap[b.material_id].latestDate) {
+          costMap[b.material_id].latestCost = cost;
+          costMap[b.material_id].latestDate = dateStr;
+        }
+      }
     });
 
     const enriched = (materials || []).map((m: any) => {
       const totalStock = stockMap[m.id] || 0;
+      const cInfo = costMap[m.id];
+      const avgCost = cInfo && cInfo.totalQty > 0 ? cInfo.totalCost / cInfo.totalQty : 0;
+      const costPerKg = cInfo?.latestCost || avgCost || 0;
       return {
         ...m,
         total_stock_kg: totalStock,
+        cost_per_kg: Number(costPerKg.toFixed(2)),
+        avg_cost_per_kg: Number(avgCost.toFixed(2)),
+        latest_cost_per_kg: Number((cInfo?.latestCost || 0).toFixed(2)),
         is_low_stock: totalStock < Number(m.min_stock_level_kg),
       };
     });
@@ -435,7 +482,7 @@ export const receiveMaterialBatch = async (req: Request, res: Response) => {
       supplierLotNumber: z.string().optional().nullable(),
       receiptDate: z.string().optional(),
       receivedQuantityKg: z.number().positive(),
-      costPerKg: z.number().nonnegative().optional().default(0),
+      costPerKg: z.number().positive({ message: 'Cost per KG is required and must be greater than 0' }),
       notes: z.string().optional(),
     });
 
