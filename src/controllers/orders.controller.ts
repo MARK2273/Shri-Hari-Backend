@@ -28,6 +28,8 @@ interface InMemOrderItem {
   dispatched_quantity_kg: number;
   status: string;
   notes?: string;
+  grade?: string;
+  size_micron?: string;
 }
 
 interface InMemOrder {
@@ -40,9 +42,47 @@ interface InMemOrder {
   status: string;
   total_requested_weight_kg: number;
   notes?: string;
+  grade?: string;
+  size_micron?: string;
   created_by?: string;
   created_at: string;
   customer_order_items: InMemOrderItem[];
+}
+
+export function formatOrderNotes(notes?: string, grade?: string, sizeMicron?: string): string {
+  const meta: { grade?: string; sizeMicron?: string; notes?: string } = {};
+  if (grade?.trim()) meta.grade = grade.trim();
+  if (sizeMicron?.trim()) meta.sizeMicron = sizeMicron.trim();
+  if (notes?.trim()) meta.notes = notes.trim();
+
+  if (!meta.grade && !meta.sizeMicron) {
+    return notes?.trim() || '';
+  }
+  return JSON.stringify(meta);
+}
+
+export function parseOrderNotes(rawNotes?: string | null): { notes: string; grade: string; sizeMicron: string } {
+  if (!rawNotes) return { notes: '', grade: '', sizeMicron: '' };
+  try {
+    if (rawNotes.trim().startsWith('{')) {
+      const parsed = JSON.parse(rawNotes);
+      return {
+        notes: parsed.notes || '',
+        grade: parsed.grade || '',
+        sizeMicron: parsed.sizeMicron || parsed.size_micron || '',
+      };
+    }
+  } catch (e) {
+    // Ignore JSON parse failure and fallback to string matching
+  }
+
+  const gradeMatch = rawNotes.match(/Grade:\s*([^|\n]+)/i);
+  const sizeMatch = rawNotes.match(/(?:Size(?:\s*\/|\s+Micron)?|Micron):\s*([^|\n]+)/i);
+  return {
+    notes: rawNotes,
+    grade: gradeMatch ? gradeMatch[1].trim() : '',
+    sizeMicron: sizeMatch ? sizeMatch[1].trim() : '',
+  };
 }
 
 import { mockStore, saveMockStore } from '../utils/mockStore';
@@ -61,8 +101,23 @@ export const getOrders = async (req: Request, res: Response) => {
       const tenantOrders = inMemOrders.filter((o) => o.tenant_id === tenantId);
       const enriched = tenantOrders.map((o) => {
         const cust = inMemCustomers.find((c) => c.id === o.customer_id);
+        const parsedOrder = parseOrderNotes(o.notes);
+        const enrichedItems = (o.customer_order_items || []).map((it) => {
+          const prod = mockStore.products?.find((p) => p.id === it.product_id);
+          const parsedItem = parseOrderNotes(it.notes);
+          return {
+            ...it,
+            grade: it.grade || parsedItem.grade || o.grade || parsedOrder.grade,
+            size_micron: it.size_micron || parsedItem.sizeMicron || o.size_micron || parsedOrder.sizeMicron,
+            notes: parsedItem.notes || it.notes,
+            products: prod ? { id: prod.id, code: prod.code, name: prod.name, unit: prod.unit } : null,
+          };
+        });
         return {
           ...o,
+          grade: o.grade || parsedOrder.grade,
+          size_micron: o.size_micron || parsedOrder.sizeMicron,
+          notes: parsedOrder.notes || o.notes,
           customers: cust
             ? {
                 id: cust.id,
@@ -73,6 +128,7 @@ export const getOrders = async (req: Request, res: Response) => {
                 delivery_address: cust.delivery_address,
               }
             : null,
+          customer_order_items: enrichedItems,
         };
       });
       return res.json({ success: true, orders: enriched });
@@ -93,7 +149,28 @@ export const getOrders = async (req: Request, res: Response) => {
       .order('created_at', { ascending: false });
 
     if (error) throw error;
-    return res.json({ success: true, orders });
+
+    const enrichedSupabaseOrders = (orders || []).map((o: any) => {
+      const parsedOrder = parseOrderNotes(o.notes);
+      const items = (o.customer_order_items || []).map((it: any) => {
+        const parsedItem = parseOrderNotes(it.notes);
+        return {
+          ...it,
+          grade: parsedItem.grade || parsedOrder.grade,
+          size_micron: parsedItem.sizeMicron || parsedOrder.sizeMicron,
+          notes: parsedItem.notes || it.notes,
+        };
+      });
+      return {
+        ...o,
+        grade: parsedOrder.grade,
+        size_micron: parsedOrder.sizeMicron,
+        notes: parsedOrder.notes || o.notes,
+        customer_order_items: items,
+      };
+    });
+
+    return res.json({ success: true, orders: enrichedSupabaseOrders });
   } catch (error: any) {
     return res.status(500).json({ success: false, message: error.message });
   }
@@ -109,12 +186,16 @@ export const createOrder = async (req: Request, res: Response) => {
       customerId: z.string().min(1),
       orderNumber: z.string().optional(),
       requiredDeliveryDate: z.string(),
+      grade: z.string().optional(),
+      sizeMicron: z.string().optional(),
       notes: z.string().optional(),
       items: z
         .array(
           z.object({
             productId: z.string().min(1),
             requestedQuantityKg: z.number().positive(),
+            grade: z.string().optional(),
+            sizeMicron: z.string().optional(),
             notes: z.string().optional(),
           })
         )
@@ -124,20 +205,29 @@ export const createOrder = async (req: Request, res: Response) => {
     const body = schema.parse(req.body);
     const resolvedOrderNumber = body.orderNumber?.trim() || `ORD-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}-${Math.floor(Math.random() * 900 + 100)}`;
     const totalWeight = body.items.reduce((sum, item) => sum + item.requestedQuantityKg, 0);
+    const orderGrade = body.grade?.trim() || body.items[0]?.grade?.trim() || '';
+    const orderSizeMicron = body.sizeMicron?.trim() || body.items[0]?.sizeMicron?.trim() || '';
+    const formattedHeaderNotes = formatOrderNotes(body.notes, orderGrade, orderSizeMicron);
 
     if (!isSupabaseConfigured) {
       const orderId = crypto.randomUUID();
-      const orderItems: InMemOrderItem[] = body.items.map((it) => ({
-        id: crypto.randomUUID(),
-        order_id: orderId,
-        product_id: it.productId,
-        requested_quantity_kg: it.requestedQuantityKg,
-        planned_quantity_kg: it.requestedQuantityKg,
-        produced_quantity_kg: 0,
-        dispatched_quantity_kg: 0,
-        status: 'pending',
-        notes: it.notes,
-      }));
+      const orderItems: InMemOrderItem[] = body.items.map((it) => {
+        const itemGrade = it.grade?.trim() || orderGrade;
+        const itemSizeMicron = it.sizeMicron?.trim() || orderSizeMicron;
+        return {
+          id: crypto.randomUUID(),
+          order_id: orderId,
+          product_id: it.productId,
+          requested_quantity_kg: it.requestedQuantityKg,
+          planned_quantity_kg: it.requestedQuantityKg,
+          produced_quantity_kg: 0,
+          dispatched_quantity_kg: 0,
+          status: 'pending',
+          grade: itemGrade,
+          size_micron: itemSizeMicron,
+          notes: formatOrderNotes(it.notes || body.notes, itemGrade, itemSizeMicron),
+        };
+      });
 
       const newOrder: InMemOrder = {
         id: orderId,
@@ -148,7 +238,9 @@ export const createOrder = async (req: Request, res: Response) => {
         required_delivery_date: body.requiredDeliveryDate,
         status: 'confirmed',
         total_requested_weight_kg: totalWeight,
-        notes: body.notes,
+        grade: orderGrade,
+        size_micron: orderSizeMicron,
+        notes: formattedHeaderNotes,
         created_by: userId,
         created_at: new Date().toISOString(),
         customer_order_items: orderItems,
@@ -177,7 +269,7 @@ export const createOrder = async (req: Request, res: Response) => {
         required_delivery_date: body.requiredDeliveryDate,
         total_requested_weight_kg: totalWeight,
         status: 'confirmed',
-        notes: body.notes,
+        notes: formattedHeaderNotes,
         created_by: userId,
       })
       .select('*')
@@ -186,14 +278,18 @@ export const createOrder = async (req: Request, res: Response) => {
     if (ordErr) throw ordErr;
 
     // 2. Insert order items
-    const itemsData = body.items.map((item) => ({
-      order_id: order.id,
-      product_id: item.productId,
-      requested_quantity_kg: item.requestedQuantityKg,
-      planned_quantity_kg: item.requestedQuantityKg,
-      status: 'pending',
-      notes: item.notes,
-    }));
+    const itemsData = body.items.map((item) => {
+      const itemGrade = item.grade?.trim() || orderGrade;
+      const itemSizeMicron = item.sizeMicron?.trim() || orderSizeMicron;
+      return {
+        order_id: order.id,
+        product_id: item.productId,
+        requested_quantity_kg: item.requestedQuantityKg,
+        planned_quantity_kg: item.requestedQuantityKg,
+        status: 'pending',
+        notes: formatOrderNotes(item.notes || body.notes, itemGrade, itemSizeMicron),
+      };
+    });
 
     const { data: items, error: itemErr } = await supabase
       .from('customer_order_items')
