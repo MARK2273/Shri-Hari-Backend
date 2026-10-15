@@ -52,12 +52,19 @@ export const getProducts = async (req: Request, res: Response) => {
 
     if (!isSupabaseConfigured) {
       const tenantProducts = inMemProducts.filter((p) => p.tenant_id === tenantId);
-      const costMap: Record<string, number> = {};
+      const costAgg: Record<string, { totalVal: number; totalQty: number }> = {};
       inMemBatches.forEach((b: any) => {
-        const cost = Number(b.cost_per_kg);
-        if (cost > 0) {
-          costMap[b.material_id] = cost;
+        const cost = Number(b.cost_per_kg) || 0;
+        const qty = Number(b.remaining_quantity_kg) || Number(b.received_quantity_kg) || 0;
+        if (cost > 0 && qty > 0) {
+          if (!costAgg[b.material_id]) costAgg[b.material_id] = { totalVal: 0, totalQty: 0 };
+          costAgg[b.material_id].totalVal += cost * qty;
+          costAgg[b.material_id].totalQty += qty;
         }
+      });
+      const costMap: Record<string, number> = {};
+      Object.keys(costAgg).forEach((mId) => {
+        costMap[mId] = costAgg[mId].totalQty > 0 ? costAgg[mId].totalVal / costAgg[mId].totalQty : 0;
       });
 
       const enriched = tenantProducts.map((p) => {
@@ -98,17 +105,27 @@ export const getProducts = async (req: Request, res: Response) => {
 
     if (error) throw error;
 
-    // Fetch batch costs to calculate recipe formulation cost
+    // Fetch batch costs to calculate recipe formulation cost using weighted average
     const { data: batches } = await supabase
       .from('material_batches')
-      .select('material_id, cost_per_kg')
+      .select('material_id, remaining_quantity_kg, received_quantity_kg, cost_per_kg')
       .eq('tenant_id', tenantId)
       .gt('cost_per_kg', 0);
 
-    const costMap: Record<string, number> = {};
+    const costAgg: Record<string, { totalVal: number; totalQty: number }> = {};
     (batches || []).forEach((b: any) => {
-      const cost = Number(b.cost_per_kg);
-      if (cost > 0) costMap[b.material_id] = cost;
+      const cost = Number(b.cost_per_kg) || 0;
+      const qty = Number(b.remaining_quantity_kg) || Number(b.received_quantity_kg) || 0;
+      if (cost > 0 && qty > 0) {
+        if (!costAgg[b.material_id]) costAgg[b.material_id] = { totalVal: 0, totalQty: 0 };
+        costAgg[b.material_id].totalVal += cost * qty;
+        costAgg[b.material_id].totalQty += qty;
+      }
+    });
+
+    const costMap: Record<string, number> = {};
+    Object.keys(costAgg).forEach((mId) => {
+      costMap[mId] = costAgg[mId].totalQty > 0 ? costAgg[mId].totalVal / costAgg[mId].totalQty : 0;
     });
 
     // Map to include latest active recipe and calculated formulation cost
