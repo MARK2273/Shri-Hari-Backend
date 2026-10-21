@@ -169,8 +169,8 @@ export const createProduct = async (req: Request, res: Response) => {
         notes: z.string().optional(),
         items: z.array(z.object({
           materialId: z.string().min(1),
-          percentage: z.number().min(0).max(100),
-          plannedKgPerKgOutput: z.number().positive(),
+          percentage: z.coerce.number().min(0).max(100),
+          plannedKgPerKgOutput: z.coerce.number().min(0),
         })).min(1),
       }).optional(),
     });
@@ -279,7 +279,8 @@ export const createProduct = async (req: Request, res: Response) => {
     return res.status(201).json({ success: true, product });
   } catch (error: any) {
     if (error instanceof z.ZodError) {
-      return res.status(400).json({ success: false, errors: error.issues });
+      const msg = error.issues.map((i: any) => `${i.path.join('.')}: ${i.message}`).join(', ');
+      return res.status(400).json({ success: false, message: msg, errors: error.issues });
     }
     return res.status(500).json({ success: false, message: error.message });
   }
@@ -397,8 +398,8 @@ export const addRecipeVersion = async (req: Request, res: Response) => {
       notes: z.string().optional(),
       items: z.array(z.object({
         materialId: z.string().min(1),
-        percentage: z.number().min(0).max(100),
-        plannedKgPerKgOutput: z.number().positive(),
+        percentage: z.coerce.number().min(0).max(100),
+        plannedKgPerKgOutput: z.coerce.number().min(0),
       })).min(1),
     });
 
@@ -493,6 +494,10 @@ export const addRecipeVersion = async (req: Request, res: Response) => {
 
     return res.status(201).json({ success: true, recipe: newRecipe, version: nextVersion });
   } catch (error: any) {
+    if (error instanceof z.ZodError) {
+      const msg = error.issues.map((i: any) => `${i.path.join('.')}: ${i.message}`).join(', ');
+      return res.status(400).json({ success: false, message: msg, errors: error.issues });
+    }
     return res.status(500).json({ success: false, message: error.message });
   }
 };
