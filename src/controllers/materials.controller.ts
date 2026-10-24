@@ -21,6 +21,7 @@ interface InMemBatch {
   tenant_id: string;
   material_id: string;
   supplier_id?: string | null;
+  supplier_name?: string | null;
   batch_number: string;
   supplier_lot_number?: string | null;
   receipt_date: string;
@@ -535,6 +536,45 @@ export const getMaterialBatches = async (req: Request, res: Response) => {
   }
 };
 
+// List active raw material suppliers
+export const getSuppliers = async (req: Request, res: Response) => {
+  try {
+    const tenantId = getTenantId(req);
+
+    const defaultSuppliers = [
+      { id: 'sup-ril', name: 'Reliance Industries Ltd (RIL)', code: 'RIL' },
+      { id: 'sup-iocl', name: 'Indian Oil Corporation Ltd (IOCL)', code: 'IOCL' },
+      { id: 'sup-gail', name: 'GAIL (India) Limited', code: 'GAIL' },
+      { id: 'sup-hpl', name: 'Haldia Petrochemicals Ltd (HPL)', code: 'HPL' },
+      { id: 'sup-opal', name: 'ONGC Petro additions Ltd (OPaL)', code: 'OPAL' },
+      { id: 'sup-supreme', name: 'Supreme Petrochem Ltd', code: 'SPL' },
+    ];
+
+    if (!isSupabaseConfigured) {
+      const custom = inMemBatches
+        .map((b) => b.supplier_name?.trim())
+        .filter((name): name is string => Boolean(name && !defaultSuppliers.some((d) => d.name.toLowerCase() === name.toLowerCase())))
+        .map((name) => ({ id: `sup-${name.toLowerCase().replace(/\s+/g, '-')}`, name, code: 'CUST' }));
+
+      return res.json({ success: true, suppliers: [...defaultSuppliers, ...custom] });
+    }
+
+    const { data, error } = await supabase
+      .from('suppliers')
+      .select('id, code, name')
+      .eq('tenant_id', tenantId)
+      .eq('is_active', true)
+      .order('name');
+
+    if (error) throw error;
+
+    const combined = (data && data.length > 0) ? data : defaultSuppliers;
+    return res.json({ success: true, suppliers: combined });
+  } catch (error: any) {
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
 // Receive new raw material lot / batch (INV-03, INV-04, INV-07)
 export const receiveMaterialBatch = async (req: Request, res: Response) => {
   try {
@@ -544,6 +584,7 @@ export const receiveMaterialBatch = async (req: Request, res: Response) => {
     const schema = z.object({
       materialId: z.string().min(1),
       supplierId: z.string().optional().nullable(),
+      supplierName: z.string().optional().nullable(),
       batchNumber: z.string().optional(),
       supplierLotNumber: z.string().optional().nullable(),
       receiptDate: z.string().optional(),
@@ -554,6 +595,7 @@ export const receiveMaterialBatch = async (req: Request, res: Response) => {
 
     const body = schema.parse(req.body);
     const resolvedBatchNumber = body.batchNumber?.trim() || `MB-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}-${Math.floor(Math.random() * 900 + 100)}`;
+    const resolvedSupplierName = body.supplierName?.trim() || null;
 
     if (!isSupabaseConfigured) {
       const mat = inMemMaterials.find((m) => m.tenant_id === tenantId && m.id === body.materialId);
@@ -566,6 +608,7 @@ export const receiveMaterialBatch = async (req: Request, res: Response) => {
         tenant_id: tenantId,
         material_id: body.materialId,
         supplier_id: body.supplierId || null,
+        supplier_name: resolvedSupplierName,
         batch_number: resolvedBatchNumber,
         supplier_lot_number: body.supplierLotNumber?.trim() || null,
         receipt_date: body.receiptDate || new Date().toISOString().split('T')[0],
@@ -579,6 +622,9 @@ export const receiveMaterialBatch = async (req: Request, res: Response) => {
       };
 
       inMemBatches.push(newBatch);
+      mockStore.batches = inMemBatches;
+      saveMockStore();
+
       return res.status(201).json({ success: true, batch: newBatch });
     }
 
@@ -588,7 +634,8 @@ export const receiveMaterialBatch = async (req: Request, res: Response) => {
       .insert({
         tenant_id: tenantId,
         material_id: body.materialId,
-        supplier_id: body.supplierId,
+        supplier_id: body.supplierId || null,
+        supplier_name: resolvedSupplierName,
         batch_number: resolvedBatchNumber,
         supplier_lot_number: body.supplierLotNumber,
         receipt_date: body.receiptDate || new Date().toISOString().split('T')[0],

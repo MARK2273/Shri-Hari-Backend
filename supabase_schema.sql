@@ -128,6 +128,7 @@ CREATE TABLE material_batches (
     tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
     material_id UUID NOT NULL REFERENCES materials(id) ON DELETE RESTRICT,
     supplier_id UUID REFERENCES suppliers(id) ON DELETE RESTRICT,
+    supplier_name TEXT,
     batch_number TEXT NOT NULL, -- e.g., 'MB-20261011-001'
     supplier_lot_number TEXT,
     receipt_date DATE NOT NULL DEFAULT CURRENT_DATE,
