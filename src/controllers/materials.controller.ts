@@ -752,7 +752,7 @@ export const receiveMaterialBatch = async (req: Request, res: Response) => {
     const tenantId = getTenantId(req);
     const userId = req.user?.id;
 
-    const schema = z.object({
+    const singleItemSchema = z.object({
       materialId: z.string().min(1),
       supplierId: z.string().optional().nullable(),
       supplierName: z.string().optional().nullable(),
@@ -764,89 +764,185 @@ export const receiveMaterialBatch = async (req: Request, res: Response) => {
       notes: z.string().optional(),
     });
 
-    const body = schema.parse(req.body);
-    const resolvedBatchNumber = body.batchNumber?.trim() || `MB-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}-${Math.floor(Math.random() * 900 + 100)}`;
-    const resolvedSupplierName = body.supplierName?.trim() || null;
+    const multiItemSchema = z.object({
+      supplierId: z.string().optional().nullable(),
+      supplierName: z.string().optional().nullable(),
+      receiptDate: z.string().optional(),
+      supplierInvoiceNo: z.string().optional().nullable(),
+      notes: z.string().optional(),
+      items: z.array(
+        z.object({
+          materialId: z.string().min(1, 'Please select a plastic material'),
+          receivedQuantityKg: z.number().positive('Received weight must be greater than 0'),
+          costPerKg: z.number().positive({ message: 'Cost per KG must be greater than 0' }),
+          supplierLotNumber: z.string().optional().nullable(),
+          batchNumber: z.string().optional(),
+          notes: z.string().optional(),
+        })
+      ).min(1, 'At least one material item is required'),
+    });
+
+    // Check if request is multi-item or single item
+    let itemsToProcess: Array<{
+      materialId: string;
+      supplierId: string | null;
+      supplierName: string | null;
+      batchNumber: string;
+      supplierLotNumber: string | null;
+      receiptDate: string;
+      receivedQuantityKg: number;
+      costPerKg: number;
+      notes: string;
+    }> = [];
+
+    const todayDate = new Date().toISOString().split('T')[0];
+    const todayCompact = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+
+    if (req.body && Array.isArray(req.body.items)) {
+      const parsedMulti = multiItemSchema.parse(req.body);
+      const headerSupplierId = parsedMulti.supplierId || null;
+      const headerSupplierName = parsedMulti.supplierName?.trim() || null;
+      const headerReceiptDate = parsedMulti.receiptDate || todayDate;
+      const headerInvoice = parsedMulti.supplierInvoiceNo?.trim() || null;
+      const headerNotes = parsedMulti.notes?.trim() || '';
+
+      itemsToProcess = parsedMulti.items.map((it, idx) => {
+        const randSuffix = Math.floor(Math.random() * 900 + 100) + idx;
+        const bNum = it.batchNumber?.trim() || `MB-${todayCompact}-${randSuffix}`;
+        const lotNum = it.supplierLotNumber?.trim() || headerInvoice || null;
+        const combinedNotes = [it.notes?.trim(), headerNotes].filter(Boolean).join(' | ');
+
+        return {
+          materialId: it.materialId,
+          supplierId: headerSupplierId,
+          supplierName: headerSupplierName,
+          batchNumber: bNum,
+          supplierLotNumber: lotNum,
+          receiptDate: headerReceiptDate,
+          receivedQuantityKg: it.receivedQuantityKg,
+          costPerKg: it.costPerKg,
+          notes: combinedNotes,
+        };
+      });
+    } else {
+      const body = singleItemSchema.parse(req.body);
+      const randSuffix = Math.floor(Math.random() * 900 + 100);
+      const bNum = body.batchNumber?.trim() || `MB-${todayCompact}-${randSuffix}`;
+
+      itemsToProcess = [
+        {
+          materialId: body.materialId,
+          supplierId: body.supplierId || null,
+          supplierName: body.supplierName?.trim() || null,
+          batchNumber: bNum,
+          supplierLotNumber: body.supplierLotNumber?.trim() || null,
+          receiptDate: body.receiptDate || todayDate,
+          receivedQuantityKg: body.receivedQuantityKg,
+          costPerKg: body.costPerKg,
+          notes: body.notes?.trim() || '',
+        },
+      ];
+    }
 
     if (!isSupabaseConfigured) {
-      const mat = inMemMaterials.find((m) => m.tenant_id === tenantId && m.id === body.materialId);
-      if (!mat) {
-        return res.status(404).json({ success: false, message: 'Selected plastic material not found.' });
+      const createdBatches: InMemBatch[] = [];
+
+      for (const item of itemsToProcess) {
+        const mat = inMemMaterials.find((m) => m.tenant_id === tenantId && m.id === item.materialId);
+        if (!mat) {
+          return res.status(404).json({ success: false, message: `Plastic material ${item.materialId} not found.` });
+        }
+
+        const newBatch: InMemBatch = {
+          id: crypto.randomUUID(),
+          tenant_id: tenantId,
+          material_id: item.materialId,
+          supplier_id: item.supplierId,
+          supplier_name: item.supplierName,
+          batch_number: item.batchNumber,
+          supplier_lot_number: item.supplierLotNumber,
+          receipt_date: item.receiptDate,
+          received_quantity_kg: item.receivedQuantityKg,
+          remaining_quantity_kg: item.receivedQuantityKg,
+          cost_per_kg: item.costPerKg,
+          status: 'available',
+          notes: item.notes,
+          created_by: userId,
+          created_at: new Date().toISOString(),
+        };
+
+        inMemBatches.push(newBatch);
+        createdBatches.push(newBatch);
       }
 
-      const newBatch: InMemBatch = {
-        id: crypto.randomUUID(),
-        tenant_id: tenantId,
-        material_id: body.materialId,
-        supplier_id: body.supplierId || null,
-        supplier_name: resolvedSupplierName,
-        batch_number: resolvedBatchNumber,
-        supplier_lot_number: body.supplierLotNumber?.trim() || null,
-        receipt_date: body.receiptDate || new Date().toISOString().split('T')[0],
-        received_quantity_kg: body.receivedQuantityKg,
-        remaining_quantity_kg: body.receivedQuantityKg,
-        cost_per_kg: body.costPerKg || 0,
-        status: 'available',
-        notes: body.notes?.trim() || '',
-        created_by: userId,
-        created_at: new Date().toISOString(),
-      };
-
-      inMemBatches.push(newBatch);
       mockStore.batches = inMemBatches;
       saveMockStore();
 
-      return res.status(201).json({ success: true, batch: newBatch });
+      return res.status(201).json({
+        success: true,
+        count: createdBatches.length,
+        batches: createdBatches,
+        batch: createdBatches[0],
+      });
     }
 
-    // 1. Create the material batch in Supabase
-    const { data: batch, error: batchError } = await supabase
-      .from('material_batches')
-      .insert({
+    // 1. Create the material batches in Supabase
+    const createdBatches: any[] = [];
+    for (const item of itemsToProcess) {
+      const { data: batch, error: batchError } = await supabase
+        .from('material_batches')
+        .insert({
+          tenant_id: tenantId,
+          material_id: item.materialId,
+          supplier_id: item.supplierId,
+          supplier_name: item.supplierName,
+          batch_number: item.batchNumber,
+          supplier_lot_number: item.supplierLotNumber,
+          receipt_date: item.receiptDate,
+          received_quantity_kg: item.receivedQuantityKg,
+          remaining_quantity_kg: item.receivedQuantityKg,
+          cost_per_kg: item.costPerKg,
+          status: 'available',
+          notes: item.notes,
+          created_by: userId,
+        })
+        .select('*')
+        .single();
+
+      if (batchError) throw batchError;
+      createdBatches.push(batch);
+
+      // 2. Append to inventory ledger (INV-07)
+      await supabase.from('inventory_transactions').insert({
         tenant_id: tenantId,
-        material_id: body.materialId,
-        supplier_id: body.supplierId || null,
-        supplier_name: resolvedSupplierName,
-        batch_number: resolvedBatchNumber,
-        supplier_lot_number: body.supplierLotNumber,
-        receipt_date: body.receiptDate || new Date().toISOString().split('T')[0],
-        received_quantity_kg: body.receivedQuantityKg,
-        remaining_quantity_kg: body.receivedQuantityKg,
-        cost_per_kg: body.costPerKg,
-        status: 'available',
-        notes: body.notes,
+        transaction_type: 'receipt',
+        item_type: 'raw_material',
+        material_id: item.materialId,
+        material_batch_id: batch.id,
+        quantity_kg: item.receivedQuantityKg,
+        reference_type: 'supplier_receipt',
+        reference_id: batch.id,
+        reason: `Received batch ${item.batchNumber}`,
         created_by: userId,
-      })
-      .select('*')
-      .single();
+      });
 
-    if (batchError) throw batchError;
+      // 3. Log audit event
+      await supabase.from('audit_logs').insert({
+        tenant_id: tenantId,
+        user_id: userId,
+        action: 'RECEIVE_MATERIAL_BATCH',
+        entity_name: 'material_batches',
+        entity_id: batch.id,
+        new_values: batch,
+      });
+    }
 
-    // 2. Append to inventory ledger (INV-07)
-    await supabase.from('inventory_transactions').insert({
-      tenant_id: tenantId,
-      transaction_type: 'receipt',
-      item_type: 'raw_material',
-      material_id: body.materialId,
-      material_batch_id: batch.id,
-      quantity_kg: body.receivedQuantityKg,
-      reference_type: 'supplier_receipt',
-      reference_id: batch.id,
-      reason: `Received batch ${body.batchNumber}`,
-      created_by: userId,
+    return res.status(201).json({
+      success: true,
+      count: createdBatches.length,
+      batches: createdBatches,
+      batch: createdBatches[0],
     });
-
-    // 3. Log audit event
-    await supabase.from('audit_logs').insert({
-      tenant_id: tenantId,
-      user_id: userId,
-      action: 'RECEIVE_MATERIAL_BATCH',
-      entity_name: 'material_batches',
-      entity_id: batch.id,
-      new_values: batch,
-    });
-
-    return res.status(201).json({ success: true, batch });
   } catch (error: any) {
     if (error instanceof z.ZodError) {
       return res.status(400).json({ success: false, errors: error.issues });
