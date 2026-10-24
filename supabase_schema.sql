@@ -281,6 +281,7 @@ CREATE TABLE production_batches (
     rejected_kg NUMERIC(14, 4) NOT NULL DEFAULT 0.0000,
     status TEXT NOT NULL DEFAULT 'draft' CHECK (status IN ('draft', 'in_progress', 'completed', 'cancelled')),
     operator_id UUID REFERENCES users(id),
+    operator_name TEXT,
     supervisor_id UUID REFERENCES users(id),
     start_time TIMESTAMP WITH TIME ZONE,
     completion_time TIMESTAMP WITH TIME ZONE,

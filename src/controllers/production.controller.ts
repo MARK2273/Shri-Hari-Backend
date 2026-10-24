@@ -23,6 +23,7 @@ export interface InMemProductionBatch {
   rejected_kg?: number;
   status: 'draft' | 'in_progress' | 'completed' | 'cancelled';
   operator_id?: string;
+  operator_name?: string;
   supervisor_id?: string;
   start_time: string;
   end_time?: string;
@@ -112,6 +113,7 @@ export const createProductionBatch = async (req: Request, res: Response) => {
       batchNumber: z.string().optional(),
       plannedQuantityKg: z.number().positive(),
       operatorId: z.string().optional(),
+      operatorName: z.string().optional(),
       supervisorId: z.string().optional(),
       notes: z.string().optional(),
     });
@@ -148,6 +150,7 @@ export const createProductionBatch = async (req: Request, res: Response) => {
         planned_quantity_kg: body.plannedQuantityKg,
         status: 'draft',
         operator_id: body.operatorId || userId,
+        operator_name: body.operatorName || undefined,
         supervisor_id: body.supervisorId,
         start_time: new Date().toISOString(),
         notes: body.notes,
@@ -197,6 +200,7 @@ export const createProductionBatch = async (req: Request, res: Response) => {
         planned_quantity_kg: body.plannedQuantityKg,
         status: 'draft',
         operator_id: body.operatorId || userId,
+        operator_name: body.operatorName || null,
         supervisor_id: body.supervisorId,
         start_time: new Date().toISOString(),
         notes: body.notes
@@ -248,6 +252,7 @@ export const confirmProductionBatch = async (req: Request, res: Response) => {
       plantWasteKg: z.number().nonnegative().default(0),
       wasteKg: z.number().nonnegative().optional(),
       rejectedKg: z.number().nonnegative().default(0),
+      operatorName: z.string().optional(),
       notes: z.string().optional()
     });
 
@@ -287,6 +292,9 @@ export const confirmProductionBatch = async (req: Request, res: Response) => {
       batch.plant_waste_kg = plantWaste;
       batch.waste_kg = totalWaste;
       batch.rejected_kg = body.rejectedKg;
+      if (body.operatorName) {
+        batch.operator_name = body.operatorName;
+      }
 
       batch.production_material_consumption = body.consumption.map((c) => {
         const mat = inMemMaterials.find((m) => m.id === c.materialId);
@@ -511,6 +519,7 @@ export const confirmProductionBatch = async (req: Request, res: Response) => {
         plant_waste_kg: plantWaste,
         waste_kg: totalWaste,
         rejected_kg: body.rejectedKg,
+        ...(body.operatorName ? { operator_name: body.operatorName } : {}),
         status: 'completed',
         completion_time: new Date().toISOString(),
         updated_at: new Date().toISOString()
