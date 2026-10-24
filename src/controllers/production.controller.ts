@@ -590,3 +590,63 @@ export const confirmProductionBatch = async (req: Request, res: Response) => {
     return res.status(500).json({ success: false, message: error.message });
   }
 };
+
+// Update Operator for a Production Batch (assign or modify who handled the batch)
+export const updateProductionBatchOperator = async (req: Request, res: Response) => {
+  try {
+    const tenantId = getTenantId(req);
+    const { batchId } = req.params;
+
+    const schema = z.object({
+      operatorName: z.string().trim().min(1, 'Operator name cannot be empty')
+    });
+
+    const body = schema.parse(req.body);
+
+    if (!isSupabaseConfigured) {
+      const batch = inMemProductionBatches.find(
+        (b) => b.id === batchId && b.tenant_id === tenantId
+      );
+      if (!batch) {
+        return res.status(404).json({ success: false, message: 'Production batch not found' });
+      }
+
+      batch.operator_name = body.operatorName;
+      saveMockStore();
+
+      return res.json({
+        success: true,
+        message: 'Operator name updated successfully',
+        batch
+      });
+    }
+
+    const { data: batch, error } = await supabase
+      .from('production_batches')
+      .update({
+        operator_name: body.operatorName,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', batchId)
+      .eq('tenant_id', tenantId)
+      .select('*')
+      .single();
+
+    if (error) throw error;
+    if (!batch) {
+      return res.status(404).json({ success: false, message: 'Production batch not found' });
+    }
+
+    return res.json({
+      success: true,
+      message: 'Operator name updated successfully',
+      batch
+    });
+  } catch (error: any) {
+    if (error instanceof z.ZodError) {
+      return res.status(400).json({ success: false, errors: error.issues });
+    }
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+

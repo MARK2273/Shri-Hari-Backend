@@ -44,6 +44,7 @@ export const getProductionVarianceReport = async (req: Request, res: Response) =
 
         return {
           batch_number: b.batch_number,
+          operator_name: b.operator_name,
           product_name: prod?.name || 'Finished Product',
           planned_input_kg: plannedInput,
           actual_input_kg: actualInput,
@@ -76,7 +77,7 @@ export const getProductionVarianceReport = async (req: Request, res: Response) =
       .from('production_batches')
       .select(`
         batch_number, planned_quantity_kg, actual_input_kg, accepted_output_kg,
-        trim_waste_kg, plant_waste_kg, waste_kg, rejected_kg, status, completion_time,
+        trim_waste_kg, plant_waste_kg, waste_kg, rejected_kg, status, completion_time, operator_name,
         products (code, name),
         production_material_consumption (
           planned_quantity_kg, actual_quantity_kg,
@@ -103,6 +104,7 @@ export const getProductionVarianceReport = async (req: Request, res: Response) =
 
       return {
         batch_number: b.batch_number,
+        operator_name: b.operator_name,
         product_name: b.products?.name,
         planned_input_kg: planned,
         actual_input_kg: actualInput,
@@ -163,6 +165,7 @@ export const getWasteReport = async (req: Request, res: Response) => {
           return {
             id: outputs?.id || `out-${b.id}`,
             batch_number: b.batch_number,
+            operator_name: b.operator_name,
             product_name: prod?.name || 'Packaging Film',
             accepted_kg: accepted,
             trim_waste_kg: trimWaste,
@@ -192,6 +195,7 @@ export const getWasteReport = async (req: Request, res: Response) => {
         *,
         production_batches (
           batch_number,
+          operator_name,
           products (name, code)
         )
       `)
@@ -222,7 +226,8 @@ export const getWasteReport = async (req: Request, res: Response) => {
       return {
         id: o.id,
         batch_number: o.production_batches?.batch_number,
-        product_name: o.production_batches?.products?.name,
+        operator_name: o.production_batches?.operator_name,
+        product_name: o.production_batches?.products?.name || 'Packaging Film',
         accepted_kg: accepted,
         trim_waste_kg: trimWaste,
         plant_waste_kg: plantWaste,

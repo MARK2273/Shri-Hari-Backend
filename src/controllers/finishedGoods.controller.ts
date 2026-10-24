@@ -38,6 +38,7 @@ export const getFinishedGoodsInventory = async (req: Request, res: Response) => 
             ? {
                 id: pb.id,
                 batch_number: pb.batch_number,
+                operator_name: pb.operator_name,
                 order_id: pb.order_id,
                 customer_orders: ord ? { order_number: ord.order_number } : null,
               }
@@ -79,7 +80,7 @@ export const getFinishedGoodsInventory = async (req: Request, res: Response) => 
       .select(`
         *,
         products (id, code, name, unit),
-        production_batches (id, batch_number, order_id, customer_orders(order_number))
+        production_batches (id, batch_number, operator_name, order_id, customer_orders(order_number))
       `)
       .eq('tenant_id', tenantId)
       .order('created_at', { ascending: false });
