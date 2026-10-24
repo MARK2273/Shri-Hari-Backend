@@ -15,6 +15,12 @@ export interface InMemProductionBatch {
   recipe_id: string;
   batch_number: string;
   planned_quantity_kg: number;
+  actual_input_kg?: number;
+  accepted_output_kg?: number;
+  trim_waste_kg?: number;
+  plant_waste_kg?: number;
+  waste_kg?: number;
+  rejected_kg?: number;
   status: 'draft' | 'in_progress' | 'completed' | 'cancelled';
   operator_id?: string;
   supervisor_id?: string;
@@ -80,7 +86,7 @@ export const getProductionBatches = async (req: Request, res: Response) => {
           material_batches (batch_number, supplier_lot_number)
         ),
         production_outputs (
-          id, accepted_kg, waste_kg, rejected_kg, recorded_at
+          id, accepted_kg, trim_waste_kg, plant_waste_kg, waste_kg, rejected_kg, recorded_at
         )
       `)
       .eq('tenant_id', tenantId)
@@ -236,14 +242,21 @@ export const confirmProductionBatch = async (req: Request, res: Response) => {
         actualQuantityKg: z.number().positive(),
         notes: z.string().optional()
       })).min(1),
-      // Outputs: Accepted, Waste, Rejected (PRO-07)
+      // Outputs: Accepted, Trim Waste, Plant Waste, Rejected (PRO-07)
       acceptedOutputKg: z.number().positive(),
-      wasteKg: z.number().nonnegative().default(0),
+      trimWasteKg: z.number().nonnegative().default(0),
+      plantWasteKg: z.number().nonnegative().default(0),
+      wasteKg: z.number().nonnegative().optional(),
       rejectedKg: z.number().nonnegative().default(0),
       notes: z.string().optional()
     });
 
     const body = schema.parse(req.body);
+    const trimWaste = body.trimWasteKg ?? 0;
+    const plantWaste = body.plantWasteKg ?? 0;
+    const totalWaste = (body.trimWasteKg !== undefined || body.plantWasteKg !== undefined)
+      ? Number((trimWaste + plantWaste).toFixed(4))
+      : (body.wasteKg ?? 0);
 
     if (!isSupabaseConfigured) {
       const batch = inMemProductionBatches.find(
@@ -269,6 +282,12 @@ export const confirmProductionBatch = async (req: Request, res: Response) => {
 
       batch.status = 'completed';
       batch.end_time = new Date().toISOString();
+      batch.accepted_output_kg = body.acceptedOutputKg;
+      batch.trim_waste_kg = trimWaste;
+      batch.plant_waste_kg = plantWaste;
+      batch.waste_kg = totalWaste;
+      batch.rejected_kg = body.rejectedKg;
+
       batch.production_material_consumption = body.consumption.map((c) => {
         const mat = inMemMaterials.find((m) => m.id === c.materialId);
         const mb = inMemBatches.find((b) => b.id === c.materialBatchId);
@@ -288,7 +307,9 @@ export const confirmProductionBatch = async (req: Request, res: Response) => {
         {
           id: `out-${Date.now()}`,
           accepted_kg: body.acceptedOutputKg,
-          waste_kg: body.wasteKg,
+          trim_waste_kg: trimWaste,
+          plant_waste_kg: plantWaste,
+          waste_kg: totalWaste,
           rejected_kg: body.rejectedKg,
           recorded_at: new Date().toISOString(),
         },
@@ -334,7 +355,9 @@ export const confirmProductionBatch = async (req: Request, res: Response) => {
         summary: {
           total_consumed_kg: body.consumption.reduce((s, c) => s + c.actualQuantityKg, 0),
           accepted_output_kg: body.acceptedOutputKg,
-          waste_kg: body.wasteKg,
+          trim_waste_kg: trimWaste,
+          plant_waste_kg: plantWaste,
+          waste_kg: totalWaste,
           rejected_kg: body.rejectedKg,
           fg_batch_created: fgBatchNumber,
         },
@@ -436,7 +459,9 @@ export const confirmProductionBatch = async (req: Request, res: Response) => {
       tenant_id: tenantId,
       production_batch_id: batchId,
       accepted_kg: body.acceptedOutputKg,
-      waste_kg: body.wasteKg,
+      trim_waste_kg: trimWaste,
+      plant_waste_kg: plantWaste,
+      waste_kg: totalWaste,
       rejected_kg: body.rejectedKg,
       recorded_by: userId,
       notes: body.notes
@@ -482,7 +507,9 @@ export const confirmProductionBatch = async (req: Request, res: Response) => {
       .update({
         actual_input_kg: totalActualInput,
         accepted_output_kg: body.acceptedOutputKg,
-        waste_kg: body.wasteKg,
+        trim_waste_kg: trimWaste,
+        plant_waste_kg: plantWaste,
+        waste_kg: totalWaste,
         rejected_kg: body.rejectedKg,
         status: 'completed',
         completion_time: new Date().toISOString(),
@@ -533,7 +560,9 @@ export const confirmProductionBatch = async (req: Request, res: Response) => {
       new_values: {
         total_input_kg: totalActualInput,
         accepted_output_kg: body.acceptedOutputKg,
-        waste_kg: body.wasteKg,
+        trim_waste_kg: trimWaste,
+        plant_waste_kg: plantWaste,
+        waste_kg: totalWaste,
         rejected_kg: body.rejectedKg,
         fg_batch_id: fgBatch.id
       }

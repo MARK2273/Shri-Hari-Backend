@@ -28,7 +28,9 @@ export const getProductionVarianceReport = async (req: Request, res: Response) =
         const acceptedOutput = Number(
           outputs?.accepted_kg ?? b.accepted_output_kg ?? (b.status === 'completed' ? plannedInput : 0)
         );
-        const wasteKg = Number(outputs?.waste_kg ?? b.waste_kg ?? 0);
+        const trimWasteKg = Number(outputs?.trim_waste_kg ?? b.trim_waste_kg ?? 0);
+        const plantWasteKg = Number(outputs?.plant_waste_kg ?? b.plant_waste_kg ?? 0);
+        const wasteKg = Number(outputs?.waste_kg ?? b.waste_kg ?? (trimWasteKg + plantWasteKg));
         const rejectedKg = Number(outputs?.rejected_kg ?? b.rejected_kg ?? 0);
 
         const yieldPct =
@@ -46,6 +48,8 @@ export const getProductionVarianceReport = async (req: Request, res: Response) =
           planned_input_kg: plannedInput,
           actual_input_kg: actualInput,
           accepted_output_kg: acceptedOutput,
+          trim_waste_kg: trimWasteKg,
+          plant_waste_kg: plantWasteKg,
           waste_kg: wasteKg,
           rejected_kg: rejectedKg,
           input_variance_kg: actualInput - plannedInput,
@@ -72,7 +76,7 @@ export const getProductionVarianceReport = async (req: Request, res: Response) =
       .from('production_batches')
       .select(`
         batch_number, planned_quantity_kg, actual_input_kg, accepted_output_kg,
-        waste_kg, rejected_kg, status, completion_time,
+        trim_waste_kg, plant_waste_kg, waste_kg, rejected_kg, status, completion_time,
         products (code, name),
         production_material_consumption (
           planned_quantity_kg, actual_quantity_kg,
@@ -89,7 +93,9 @@ export const getProductionVarianceReport = async (req: Request, res: Response) =
       const planned = Number(b.planned_quantity_kg);
       const actualInput = Number(b.actual_input_kg);
       const accepted = Number(b.accepted_output_kg);
-      const waste = Number(b.waste_kg);
+      const trimWaste = Number(b.trim_waste_kg || 0);
+      const plantWaste = Number(b.plant_waste_kg || 0);
+      const waste = Number(b.waste_kg || (trimWaste + plantWaste));
       const rejected = Number(b.rejected_kg);
 
       const yieldPct = actualInput > 0 ? (accepted / actualInput) * 100 : 0;
@@ -101,6 +107,8 @@ export const getProductionVarianceReport = async (req: Request, res: Response) =
         planned_input_kg: planned,
         actual_input_kg: actualInput,
         accepted_output_kg: accepted,
+        trim_waste_kg: trimWaste,
+        plant_waste_kg: plantWaste,
         waste_kg: waste,
         rejected_kg: rejected,
         input_variance_kg: actualInput - planned,
@@ -129,6 +137,8 @@ export const getWasteReport = async (req: Request, res: Response) => {
     if (!isSupabaseConfigured) {
       const batches = mockStore.productionBatches.filter((b: any) => b.tenant_id === tenantId);
 
+      let totalTrimWaste = 0;
+      let totalPlantWaste = 0;
       let totalWaste = 0;
       let totalRejected = 0;
       let totalAccepted = 0;
@@ -139,10 +149,14 @@ export const getWasteReport = async (req: Request, res: Response) => {
           const prod = mockStore.products.find((p: any) => p.id === b.product_id) || b.products;
           const outputs = b.production_outputs?.[0];
           const accepted = Number(outputs?.accepted_kg ?? b.accepted_output_kg ?? b.planned_quantity_kg);
-          const waste = Number(outputs?.waste_kg ?? b.waste_kg ?? 0);
+          const trimWaste = Number(outputs?.trim_waste_kg ?? b.trim_waste_kg ?? 0);
+          const plantWaste = Number(outputs?.plant_waste_kg ?? b.plant_waste_kg ?? 0);
+          const waste = Number(outputs?.waste_kg ?? b.waste_kg ?? (trimWaste + plantWaste));
           const rejected = Number(outputs?.rejected_kg ?? b.rejected_kg ?? 0);
 
           totalAccepted += accepted;
+          totalTrimWaste += trimWaste;
+          totalPlantWaste += plantWaste;
           totalWaste += waste;
           totalRejected += rejected;
 
@@ -151,6 +165,8 @@ export const getWasteReport = async (req: Request, res: Response) => {
             batch_number: b.batch_number,
             product_name: prod?.name || 'Packaging Film',
             accepted_kg: accepted,
+            trim_waste_kg: trimWaste,
+            plant_waste_kg: plantWaste,
             waste_kg: waste,
             rejected_kg: rejected,
             recorded_at: outputs?.recorded_at || b.end_time || b.created_at,
@@ -160,6 +176,8 @@ export const getWasteReport = async (req: Request, res: Response) => {
       return res.json({
         success: true,
         summary: {
+          total_trim_waste_kg: totalTrimWaste,
+          total_plant_waste_kg: totalPlantWaste,
           total_waste_kg: totalWaste,
           total_rejected_kg: totalRejected,
           total_accepted_kg: totalAccepted,
@@ -182,21 +200,34 @@ export const getWasteReport = async (req: Request, res: Response) => {
 
     if (error) throw error;
 
+    let totalTrimWaste = 0;
+    let totalPlantWaste = 0;
     let totalWaste = 0;
     let totalRejected = 0;
     let totalAccepted = 0;
 
     const records = (outputs || []).map((o: any) => {
-      totalWaste += Number(o.waste_kg || 0);
-      totalRejected += Number(o.rejected_kg || 0);
-      totalAccepted += Number(o.accepted_kg || 0);
+      const trimWaste = Number(o.trim_waste_kg || 0);
+      const plantWaste = Number(o.plant_waste_kg || 0);
+      const waste = Number(o.waste_kg || (trimWaste + plantWaste));
+      const accepted = Number(o.accepted_kg || 0);
+      const rejected = Number(o.rejected_kg || 0);
+
+      totalTrimWaste += trimWaste;
+      totalPlantWaste += plantWaste;
+      totalWaste += waste;
+      totalRejected += rejected;
+      totalAccepted += accepted;
+
       return {
         id: o.id,
         batch_number: o.production_batches?.batch_number,
         product_name: o.production_batches?.products?.name,
-        accepted_kg: Number(o.accepted_kg),
-        waste_kg: Number(o.waste_kg),
-        rejected_kg: Number(o.rejected_kg),
+        accepted_kg: accepted,
+        trim_waste_kg: trimWaste,
+        plant_waste_kg: plantWaste,
+        waste_kg: waste,
+        rejected_kg: rejected,
         recorded_at: o.recorded_at,
       };
     });
@@ -204,6 +235,8 @@ export const getWasteReport = async (req: Request, res: Response) => {
     return res.json({
       success: true,
       summary: {
+        total_trim_waste_kg: totalTrimWaste,
+        total_plant_waste_kg: totalPlantWaste,
         total_waste_kg: totalWaste,
         total_rejected_kg: totalRejected,
         total_accepted_kg: totalAccepted,
