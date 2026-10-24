@@ -34,11 +34,26 @@ interface InMemBatch {
   created_at: string;
 }
 
+interface InMemSupplier {
+  id: string;
+  tenant_id: string;
+  code: string;
+  name: string;
+  contact_person?: string;
+  phone?: string;
+  email?: string;
+  address?: string;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
 import { mockStore, saveMockStore } from '../utils/mockStore';
 
 // In-memory tenant stores when running without active Supabase credentials
 export let inMemMaterials: InMemMaterial[] = mockStore.materials;
 export let inMemBatches: InMemBatch[] = mockStore.batches;
+export let inMemSuppliers: InMemSupplier[] = mockStore.suppliers || [];
 
 const getTenantId = (req: Request): string => (req.tenantId || process.env.DEFAULT_TENANT_SLUG || 'shri-hari-pack') as string;
 
@@ -536,40 +551,196 @@ export const getMaterialBatches = async (req: Request, res: Response) => {
   }
 };
 
-// List active raw material suppliers
+// List raw material suppliers / vendors
 export const getSuppliers = async (req: Request, res: Response) => {
   try {
     const tenantId = getTenantId(req);
 
-    const defaultSuppliers = [
-      { id: 'sup-ril', name: 'Reliance Industries Ltd (RIL)', code: 'RIL' },
-      { id: 'sup-iocl', name: 'Indian Oil Corporation Ltd (IOCL)', code: 'IOCL' },
-      { id: 'sup-gail', name: 'GAIL (India) Limited', code: 'GAIL' },
-      { id: 'sup-hpl', name: 'Haldia Petrochemicals Ltd (HPL)', code: 'HPL' },
-      { id: 'sup-opal', name: 'ONGC Petro additions Ltd (OPaL)', code: 'OPAL' },
-      { id: 'sup-supreme', name: 'Supreme Petrochem Ltd', code: 'SPL' },
-    ];
-
     if (!isSupabaseConfigured) {
-      const custom = inMemBatches
-        .map((b) => b.supplier_name?.trim())
-        .filter((name): name is string => Boolean(name && !defaultSuppliers.some((d) => d.name.toLowerCase() === name.toLowerCase())))
-        .map((name) => ({ id: `sup-${name.toLowerCase().replace(/\s+/g, '-')}`, name, code: 'CUST' }));
-
-      return res.json({ success: true, suppliers: [...defaultSuppliers, ...custom] });
+      const list = inMemSuppliers.filter((s) => s.tenant_id === tenantId);
+      return res.json({ success: true, suppliers: list });
     }
 
     const { data, error } = await supabase
       .from('suppliers')
-      .select('id, code, name')
+      .select('*')
       .eq('tenant_id', tenantId)
-      .eq('is_active', true)
       .order('name');
 
     if (error) throw error;
+    return res.json({ success: true, suppliers: data || [] });
+  } catch (error: any) {
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
 
-    const combined = (data && data.length > 0) ? data : defaultSuppliers;
-    return res.json({ success: true, suppliers: combined });
+// Create new supplier / vendor master entry
+export const createSupplier = async (req: Request, res: Response) => {
+  try {
+    const tenantId = getTenantId(req);
+    const schema = z.object({
+      name: z.string().min(2, 'Vendor/Supplier name is required'),
+      code: z.string().optional(),
+      contactPerson: z.string().optional(),
+      phone: z.string().optional(),
+      email: z.string().optional(),
+      address: z.string().optional(),
+    });
+
+    const body = schema.parse(req.body);
+    const resolvedCode = body.code?.trim().toUpperCase() || `SUP-${Math.floor(Math.random() * 9000 + 1000)}`;
+
+    if (!isSupabaseConfigured) {
+      const exists = inMemSuppliers.some(
+        (s) => s.tenant_id === tenantId && s.name.toLowerCase() === body.name.trim().toLowerCase()
+      );
+      if (exists) {
+        return res.status(400).json({ success: false, message: `Supplier '${body.name.trim()}' already exists.` });
+      }
+
+      const newSupplier: InMemSupplier = {
+        id: crypto.randomUUID(),
+        tenant_id: tenantId,
+        code: resolvedCode,
+        name: body.name.trim(),
+        contact_person: body.contactPerson?.trim() || '',
+        phone: body.phone?.trim() || '',
+        email: body.email?.trim() || '',
+        address: body.address?.trim() || '',
+        is_active: true,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      };
+
+      inMemSuppliers.push(newSupplier);
+      mockStore.suppliers = inMemSuppliers;
+      saveMockStore();
+
+      return res.status(201).json({ success: true, supplier: newSupplier });
+    }
+
+    const { data, error } = await supabase
+      .from('suppliers')
+      .insert({
+        tenant_id: tenantId,
+        code: resolvedCode,
+        name: body.name.trim(),
+        contact_person: body.contactPerson?.trim() || null,
+        phone: body.phone?.trim() || null,
+        email: body.email?.trim() || null,
+        address: body.address?.trim() || null,
+        is_active: true,
+      })
+      .select('*')
+      .single();
+
+    if (error) {
+      if (error.code === '23505') {
+        return res.status(400).json({ success: false, message: `Supplier code '${resolvedCode}' already exists.` });
+      }
+      throw error;
+    }
+
+    return res.status(201).json({ success: true, supplier: data });
+  } catch (error: any) {
+    if (error instanceof z.ZodError) {
+      return res.status(400).json({ success: false, errors: error.issues });
+    }
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+// Update supplier / vendor master entry
+export const updateSupplier = async (req: Request, res: Response) => {
+  try {
+    const tenantId = getTenantId(req);
+    const { id } = req.params;
+
+    const schema = z.object({
+      name: z.string().min(2).optional(),
+      contactPerson: z.string().optional(),
+      phone: z.string().optional(),
+      email: z.string().optional(),
+      address: z.string().optional(),
+      isActive: z.boolean().optional(),
+    });
+
+    const body = schema.parse(req.body);
+
+    if (!isSupabaseConfigured) {
+      const idx = inMemSuppliers.findIndex((s) => s.tenant_id === tenantId && s.id === id);
+      if (idx === -1) {
+        return res.status(404).json({ success: false, message: 'Supplier not found.' });
+      }
+
+      inMemSuppliers[idx] = {
+        ...inMemSuppliers[idx],
+        name: body.name !== undefined ? body.name.trim() : inMemSuppliers[idx].name,
+        contact_person: body.contactPerson !== undefined ? body.contactPerson.trim() : inMemSuppliers[idx].contact_person,
+        phone: body.phone !== undefined ? body.phone.trim() : inMemSuppliers[idx].phone,
+        email: body.email !== undefined ? body.email.trim() : inMemSuppliers[idx].email,
+        address: body.address !== undefined ? body.address.trim() : inMemSuppliers[idx].address,
+        is_active: body.isActive !== undefined ? body.isActive : inMemSuppliers[idx].is_active,
+        updated_at: new Date().toISOString(),
+      };
+
+      mockStore.suppliers = inMemSuppliers;
+      saveMockStore();
+
+      return res.json({ success: true, supplier: inMemSuppliers[idx] });
+    }
+
+    const updatePayload: any = { updated_at: new Date().toISOString() };
+    if (body.name !== undefined) updatePayload.name = body.name.trim();
+    if (body.contactPerson !== undefined) updatePayload.contact_person = body.contactPerson.trim();
+    if (body.phone !== undefined) updatePayload.phone = body.phone.trim();
+    if (body.email !== undefined) updatePayload.email = body.email.trim();
+    if (body.address !== undefined) updatePayload.address = body.address.trim();
+    if (body.isActive !== undefined) updatePayload.is_active = body.isActive;
+
+    const { data, error } = await supabase
+      .from('suppliers')
+      .update(updatePayload)
+      .eq('tenant_id', tenantId)
+      .eq('id', id)
+      .select('*')
+      .single();
+
+    if (error) throw error;
+    return res.json({ success: true, supplier: data });
+  } catch (error: any) {
+    if (error instanceof z.ZodError) {
+      return res.status(400).json({ success: false, errors: error.issues });
+    }
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+// Delete supplier / vendor
+export const deleteSupplier = async (req: Request, res: Response) => {
+  try {
+    const tenantId = getTenantId(req);
+    const { id } = req.params;
+
+    if (!isSupabaseConfigured) {
+      const idx = inMemSuppliers.findIndex((s) => s.tenant_id === tenantId && s.id === id);
+      if (idx === -1) {
+        return res.status(404).json({ success: false, message: 'Supplier not found.' });
+      }
+      inMemSuppliers.splice(idx, 1);
+      mockStore.suppliers = inMemSuppliers;
+      saveMockStore();
+      return res.json({ success: true, message: 'Supplier deleted successfully.' });
+    }
+
+    const { error } = await supabase
+      .from('suppliers')
+      .delete()
+      .eq('tenant_id', tenantId)
+      .eq('id', id);
+
+    if (error) throw error;
+    return res.json({ success: true, message: 'Supplier deleted successfully.' });
   } catch (error: any) {
     return res.status(500).json({ success: false, message: error.message });
   }
