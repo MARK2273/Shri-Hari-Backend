@@ -162,6 +162,19 @@ CREATE TABLE customers (
     CONSTRAINT uq_customer_tenant_code UNIQUE (tenant_id, code)
 );
 
+CREATE TABLE size_microns (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    tenant_id TEXT NOT NULL,
+    label TEXT NOT NULL,
+    size TEXT DEFAULT 'Standard',
+    micron NUMERIC(10, 2) NOT NULL,
+    unit TEXT NOT NULL DEFAULT 'Micron',
+    description TEXT,
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
 CREATE TABLE products (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
@@ -170,6 +183,7 @@ CREATE TABLE products (
     description TEXT,
     unit TEXT NOT NULL DEFAULT 'kg' CHECK (unit IN ('kg', 'pcs', 'rolls')),
     standard_weight_kg NUMERIC(14, 4) DEFAULT 1.0000, -- Weight per unit if unit is pcs
+    size_micron TEXT,
     is_active BOOLEAN NOT NULL DEFAULT TRUE,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
@@ -216,6 +230,10 @@ CREATE TABLE customer_orders (
         'produced', 'partially_dispatched', 'completed', 'cancelled'
     )),
     total_requested_weight_kg NUMERIC(14, 4) NOT NULL DEFAULT 0.0000,
+    grade TEXT,
+    size_micron TEXT,
+    selling_price_per_kg NUMERIC(12, 2) DEFAULT 0.00,
+    recipe_cost_per_kg NUMERIC(12, 2) DEFAULT 0.00,
     notes TEXT,
     created_by UUID REFERENCES users(id),
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
@@ -232,6 +250,10 @@ CREATE TABLE customer_order_items (
     produced_quantity_kg NUMERIC(14, 4) NOT NULL DEFAULT 0.0000,
     dispatched_quantity_kg NUMERIC(14, 4) NOT NULL DEFAULT 0.0000,
     status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'in_production', 'produced', 'partially_dispatched', 'dispatched')),
+    grade TEXT,
+    size_micron TEXT,
+    selling_price_per_kg NUMERIC(12, 2) DEFAULT 0.00,
+    recipe_cost_per_kg NUMERIC(12, 2) DEFAULT 0.00,
     notes TEXT,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     CONSTRAINT uq_order_product_item UNIQUE (order_id, product_id)

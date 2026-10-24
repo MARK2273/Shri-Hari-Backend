@@ -24,6 +24,7 @@ export interface MockStoreData {
   fgBatches: any[];
   deliveries: any[];
   auditLogs: any[];
+  sizeMicrons: any[];
 }
 
 const defaultData: MockStoreData = {
@@ -36,6 +37,7 @@ const defaultData: MockStoreData = {
   fgBatches: [],
   deliveries: [],
   auditLogs: [],
+  sizeMicrons: [],
 };
 
 function loadStore(): MockStoreData {
@@ -53,6 +55,7 @@ function loadStore(): MockStoreData {
         fgBatches: parsed.fgBatches || [],
         deliveries: parsed.deliveries || [],
         auditLogs: parsed.auditLogs || [],
+        sizeMicrons: parsed.sizeMicrons || [],
       };
     }
   } catch (err) {

@@ -10,6 +10,7 @@ import dispatchRoutes from './routes/dispatch.routes';
 import traceabilityRoutes from './routes/traceability.routes';
 import reportsRoutes from './routes/reports.routes';
 import tenantRoutes from './routes/tenant.routes';
+import sizeMicronRoutes from './routes/sizeMicron.routes';
 
 const app = express();
 
@@ -27,6 +28,7 @@ app.use('/api/dispatch', dispatchRoutes);
 app.use('/api/traceability', traceabilityRoutes);
 app.use('/api/reports', reportsRoutes);
 app.use('/api/tenants', tenantRoutes);
+app.use('/api/size-microns', sizeMicronRoutes);
 
 app.get('/api/health', (req, res) => {
   res.json({

@@ -33,6 +33,7 @@ interface InMemProduct {
   description?: string;
   unit: string;
   standard_weight_kg: number;
+  size_micron?: string;
   is_active: boolean;
   created_at: string;
   updated_at: string;
@@ -165,6 +166,7 @@ export const createProduct = async (req: Request, res: Response) => {
       description: z.string().optional(),
       unit: z.enum(['kg', 'pcs', 'rolls']).default('kg'),
       standardWeightKg: z.number().positive().default(1.0),
+      sizeMicron: z.string().optional(),
       initialRecipe: z.object({
         notes: z.string().optional(),
         items: z.array(z.object({
@@ -219,6 +221,7 @@ export const createProduct = async (req: Request, res: Response) => {
         description: body.description?.trim() || '',
         unit: body.unit,
         standard_weight_kg: body.standardWeightKg,
+        size_micron: body.sizeMicron?.trim() || '',
         is_active: true,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
@@ -226,6 +229,7 @@ export const createProduct = async (req: Request, res: Response) => {
       };
 
       inMemProducts.push(newProduct);
+      saveMockStore();
       return res.status(201).json({
         success: true,
         product: { ...newProduct, active_recipe: initialRecipes[0] || null },
@@ -243,6 +247,7 @@ export const createProduct = async (req: Request, res: Response) => {
         description: body.description,
         unit: body.unit,
         standard_weight_kg: body.standardWeightKg,
+        size_micron: body.sizeMicron?.trim() || null,
       })
       .select('*')
       .single();
@@ -297,6 +302,7 @@ export const updateProduct = async (req: Request, res: Response) => {
       description: z.string().optional(),
       unit: z.enum(['kg', 'pcs', 'rolls']).optional(),
       standardWeightKg: z.number().positive().optional(),
+      sizeMicron: z.string().optional(),
       isActive: z.boolean().optional(),
     });
 
@@ -314,9 +320,12 @@ export const updateProduct = async (req: Request, res: Response) => {
         ...(body.description !== undefined ? { description: body.description.trim() } : {}),
         ...(body.unit ? { unit: body.unit } : {}),
         ...(body.standardWeightKg !== undefined ? { standard_weight_kg: body.standardWeightKg } : {}),
+        ...(body.sizeMicron !== undefined ? { size_micron: body.sizeMicron.trim() } : {}),
         ...(body.isActive !== undefined ? { is_active: body.isActive } : {}),
         updated_at: new Date().toISOString(),
       };
+
+      saveMockStore();
 
       return res.json({ success: true, product: inMemProducts[idx] });
     }
@@ -326,6 +335,7 @@ export const updateProduct = async (req: Request, res: Response) => {
     if (body.description !== undefined) updates.description = body.description;
     if (body.unit) updates.unit = body.unit;
     if (body.standardWeightKg !== undefined) updates.standard_weight_kg = body.standardWeightKg;
+    if (body.sizeMicron !== undefined) updates.size_micron = body.sizeMicron.trim();
     if (body.isActive !== undefined) updates.is_active = body.isActive;
 
     const { data, error } = await supabase
