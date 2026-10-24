@@ -9,26 +9,49 @@ const getTenantId = (req: Request): string =>
 export const getTraceability = async (req: Request, res: Response) => {
   try {
     const tenantId = getTenantId(req);
-    const { batchNumber, orderNumber, lotNumber, q } = req.query;
-    const rawSearch = (batchNumber || orderNumber || lotNumber || q || '') as string;
+    const { batchId, batchNumber, orderNumber, lotNumber, q } = req.query;
+    const rawSearch = (batchId || batchNumber || orderNumber || lotNumber || q || '') as string;
     const queryTerm = rawSearch.trim().toLowerCase();
 
     if (!isSupabaseConfigured) {
       const batches = mockStore.productionBatches.filter((b: any) => b.tenant_id === tenantId);
 
-      // Search by batchNumber, orderNumber, or material lot
+      const availableBatches = batches.map((b: any) => {
+        const prod = mockStore.products.find((p: any) => p.id === b.product_id) || b.products;
+        const ord = mockStore.orders.find((o: any) => o.id === b.order_id || o.order_number === b.order_id);
+        const cust = ord?.customer_id
+          ? mockStore.customers.find((c: any) => c.id === ord.customer_id)
+          : ord?.customers || b.customer_orders?.customers;
+        return {
+          id: b.id,
+          batch_number: b.batch_number,
+          product_name: prod?.name || b.product_name || 'Finished Product',
+          customer_name: cust?.name || ord?.customer_name || 'Direct Customer',
+          operator_name: b.operator_name || null,
+          created_at: b.created_at || b.start_time || new Date().toISOString(),
+          accepted_output_kg: b.accepted_output_kg || b.planned_quantity_kg || 0,
+        };
+      });
+
+      // Search by batchId, batchNumber, product name, customer name, or operator
       let matchedBatch: any = null;
-      if (queryTerm) {
+      if (batchId) {
+        matchedBatch = batches.find((b: any) => b.id === batchId);
+      } else if (batchNumber) {
+        matchedBatch = batches.find((b: any) => b.batch_number?.toLowerCase() === (batchNumber as string).toLowerCase());
+      } else if (queryTerm) {
         matchedBatch = batches.find((b: any) => {
+          const prod = mockStore.products.find((p: any) => p.id === b.product_id) || b.products;
+          const ord = mockStore.orders.find((o: any) => o.id === b.order_id);
+          const cust = ord?.customer_id
+            ? mockStore.customers.find((c: any) => c.id === ord.customer_id)
+            : ord?.customers || b.customer_orders?.customers;
+          const matchProd = (prod?.name || b.product_name || '').toLowerCase().includes(queryTerm);
+          const matchCust = (cust?.name || ord?.customer_name || '').toLowerCase().includes(queryTerm);
+          const matchOp = (b.operator_name || '').toLowerCase().includes(queryTerm);
           const matchBatch = b.batch_number?.toLowerCase().includes(queryTerm);
           const matchOrder = b.customer_orders?.order_number?.toLowerCase().includes(queryTerm);
-          const matchConsump = b.production_material_consumption?.some((c: any) =>
-            c.material_batches?.batch_number?.toLowerCase().includes(queryTerm) ||
-            c.material_batches?.supplier_lot_number?.toLowerCase().includes(queryTerm) ||
-            c.materials?.name?.toLowerCase().includes(queryTerm) ||
-            c.materials?.code?.toLowerCase().includes(queryTerm)
-          );
-          return matchBatch || matchOrder || matchConsump;
+          return matchProd || matchCust || matchOp || matchBatch || matchOrder;
         });
       }
 
@@ -42,7 +65,7 @@ export const getTraceability = async (req: Request, res: Response) => {
           success: true,
           traceability: null,
           records: [],
-          availableBatches: batches.map((b: any) => b.batch_number),
+          availableBatches,
         });
       }
 
@@ -164,11 +187,39 @@ export const getTraceability = async (req: Request, res: Response) => {
         success: true,
         traceability: record,
         records: [record],
-        availableBatches: batches.map((b: any) => b.batch_number),
+        availableBatches,
       });
     }
 
-    // In connected Supabase: query production batch by batch number, order, or lot
+    // In connected Supabase: query production batches
+    const isUuid = (val?: string) =>
+      Boolean(val && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val));
+
+    let batchesListQuery = supabase
+      .from('production_batches')
+      .select(`
+        id, batch_number, created_at, operator_name, planned_quantity_kg, accepted_output_kg,
+        products (name),
+        customer_orders (customers (name))
+      `)
+      .order('created_at', { ascending: false });
+
+    if (isUuid(tenantId)) {
+      batchesListQuery = batchesListQuery.eq('tenant_id', tenantId);
+    }
+
+    const { data: allBatches } = await batchesListQuery;
+
+    const availableBatches = (allBatches || []).map((b: any) => ({
+      id: b.id,
+      batch_number: b.batch_number,
+      product_name: b.products?.name || 'Finished Product',
+      customer_name: b.customer_orders?.customers?.name || 'Direct Customer',
+      operator_name: b.operator_name || null,
+      created_at: b.created_at,
+      accepted_output_kg: b.accepted_output_kg || b.planned_quantity_kg || 0,
+    }));
+
     let query = supabase
       .from('production_batches')
       .select(`
@@ -190,21 +241,128 @@ export const getTraceability = async (req: Request, res: Response) => {
         finished_goods_batches (
           id, batch_number, quantity_produced_kg, quantity_on_hand_kg, quantity_dispatched_kg, status
         )
-      `)
-      .eq('tenant_id', tenantId);
+      `);
 
-    if (queryTerm) {
-      query = query.ilike('batch_number', `%${queryTerm}%`);
+    if (isUuid(tenantId)) {
+      query = query.eq('tenant_id', tenantId);
+    }
+
+    if (batchId) {
+      query = query.eq('id', batchId);
+    } else if (batchNumber) {
+      query = query.eq('batch_number', batchNumber);
+    } else if (queryTerm) {
+      const matched = availableBatches.find(
+        (b: any) =>
+          b.product_name.toLowerCase().includes(queryTerm) ||
+          b.customer_name.toLowerCase().includes(queryTerm) ||
+          (b.operator_name && b.operator_name.toLowerCase().includes(queryTerm)) ||
+          b.batch_number.toLowerCase().includes(queryTerm)
+      );
+      if (matched) {
+        query = query.eq('id', matched.id);
+      } else {
+        query = query.ilike('batch_number', `%${queryTerm}%`);
+      }
+    } else {
+      query = query.order('created_at', { ascending: false }).limit(1);
     }
 
     const { data: records, error } = await query;
     if (error) throw error;
 
     const first = records?.[0] || null;
+
+    if (!first) {
+      return res.json({
+        success: true,
+        traceability: null,
+        records: [],
+        availableBatches,
+      });
+    }
+
+    // Look up delivery dispatch note if order_id is present
+    let dispatchDelivery: any = null;
+    if (first.order_id) {
+      const { data: delData } = await supabase
+        .from('deliveries')
+        .select('*')
+        .eq('order_id', first.order_id)
+        .limit(1);
+      dispatchDelivery = delData?.[0] || null;
+    }
+
+    const totalInputKg =
+      (first.production_material_consumption || []).reduce(
+        (sum: number, c: any) => sum + (Number(c.actual_quantity_kg) || Number(c.planned_quantity_kg) || 0),
+        0
+      ) || Number(first.planned_quantity_kg || 1);
+
+    const rawLots = (first.production_material_consumption || []).map((c: any) => {
+      const actualKg = Number(c.actual_quantity_kg) || Number(c.planned_quantity_kg) || 0;
+      return {
+        material_name: c.materials?.name || 'Raw Polymer Material',
+        supplier: c.material_batches?.supplier_lot_number
+          ? `Supplier Lot: ${c.material_batches.supplier_lot_number}`
+          : c.material_batches?.suppliers?.name || 'Approved Polymer Vendor',
+        consumed_kg: actualKg,
+        planned_kg: Number(c.planned_quantity_kg) || actualKg,
+        contribution_pct: totalInputKg > 0 ? ((actualKg / totalInputKg) * 100).toFixed(1) : '0',
+      };
+    });
+
+    const plannedKg = Number(first.planned_quantity_kg || 1);
+    const acceptedKg = Number(first.accepted_output_kg || 0);
+    const yieldPct = ((acceptedKg / plannedKg) * 100).toFixed(1);
+
+    const enrichedRecord = {
+      id: first.id,
+      batch_number: first.batch_number,
+      status: first.status,
+      planned_quantity_kg: plannedKg,
+      accepted_output_kg: acceptedKg,
+      waste_kg: Number(first.waste_kg || 0),
+      trim_waste_kg: Number(first.trim_waste_kg || 0),
+      plant_waste_kg: Number(first.plant_waste_kg || 0),
+      yield_percentage: yieldPct,
+      start_time: first.start_time,
+      operator_name: first.operator_name || null,
+      customer_order: {
+        id: first.customer_orders?.id,
+        order_number: first.customer_orders?.order_number,
+        customer_name: first.customer_orders?.customers?.name || 'Customer Account',
+        delivery_address: first.customer_orders?.customers?.delivery_address || 'Shipping Address',
+        status: first.customer_orders?.status || 'Confirmed',
+        total_requested_weight_kg: plannedKg,
+      },
+      customer_orders: first.customer_orders,
+      products: first.products,
+      product_recipes: first.product_recipes || { version: 1 },
+      production_batch: {
+        id: first.id,
+        batch_number: first.batch_number,
+        operator_name: first.operator_name,
+        status: first.status,
+        yield_pct: yieldPct,
+      },
+      raw_material_lots_consumed: rawLots,
+      finished_goods_batch: first.finished_goods_batches?.[0] || null,
+      finished_goods_batches: first.finished_goods_batches || [],
+      dispatch: dispatchDelivery
+        ? {
+            destination_address: dispatchDelivery.destination_address || first.customer_orders?.customers?.delivery_address,
+            vehicle_number: dispatchDelivery.vehicle_number || 'Transport Vehicle',
+            status: dispatchDelivery.status,
+          }
+        : null,
+    };
+
     return res.json({
       success: true,
-      traceability: first,
-      records: records || [],
+      traceability: enrichedRecord,
+      records: [enrichedRecord],
+      availableBatches,
     });
   } catch (error: any) {
     return res.status(500).json({ success: false, message: error.message });
