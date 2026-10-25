@@ -441,6 +441,73 @@ export const createJobWorkOrder = async (req: Request, res: Response) => {
       planned_kg_per_kg_output: Number(it.planned_kg_per_kg_output) || 1,
     }));
 
+    // Strict Validation: Ensure Vendor holds sufficient stock of required recipe materials
+    if (normalizedRecipeItems.length > 0) {
+      const outwardList = (mockStore.jobWorkMaterialOutward || []).filter(
+        (o) => o.vendor_id === vendor.id
+      );
+      const receiptsList = (mockStore.jobWorkReceipts || []).filter(
+        (r) => r.vendor_id === vendor.id
+      );
+
+      const vendorMaterialBalances: Record<string, { material_name: string; balance_kg: number }> = {};
+      outwardList.forEach((o) => {
+        if (!vendorMaterialBalances[o.material_id]) {
+          vendorMaterialBalances[o.material_id] = { material_name: o.material_name, balance_kg: 0 };
+        }
+        vendorMaterialBalances[o.material_id].balance_kg += Number(o.quantity_kg) || 0;
+      });
+
+      receiptsList.forEach((r) => {
+        if (Array.isArray(r.materials_consumed)) {
+          r.materials_consumed.forEach((c: any) => {
+            if (vendorMaterialBalances[c.material_id]) {
+              vendorMaterialBalances[c.material_id].balance_kg -= Number(c.consumed_kg) || 0;
+            }
+          });
+        }
+      });
+
+      // Calculate shortages against recipe requirements
+      const shortages: Array<{
+        material_id: string;
+        material_name: string;
+        required_kg: number;
+        available_kg: number;
+        deficit_kg: number;
+      }> = [];
+
+      normalizedRecipeItems.forEach((item: any) => {
+        const ratio = (Number(item.percentage) || 100) / 100;
+        const requiredKg = Number((ratio * plannedKg).toFixed(2));
+        const currentHeld = Math.max(0, vendorMaterialBalances[item.material_id]?.balance_kg || 0);
+
+        if (currentHeld < requiredKg) {
+          shortages.push({
+            material_id: item.material_id,
+            material_name: item.material_name || 'Raw Material',
+            required_kg: requiredKg,
+            available_kg: Number(currentHeld.toFixed(2)),
+            deficit_kg: Number((requiredKg - currentHeld).toFixed(2)),
+          });
+        }
+      });
+
+      if (shortages.length > 0) {
+        const shortageDetails = shortages
+          .map(
+            (s) =>
+              `${s.material_name} (Required: ${s.required_kg} kg, In Hand: ${s.available_kg} kg, Shortage: ${s.deficit_kg} kg)`
+          )
+          .join('; ');
+
+        return res.status(400).json({
+          error: `Cannot assign order: Vendor '${vendor.name}' does not have sufficient materials in hand for this recipe. ${shortageDetails}. Please dispatch raw material outward to this vendor first.`,
+          shortages,
+        });
+      }
+    }
+
     const newOrder = {
       id: `jword-${Date.now()}`,
       tenant_id: tenantId,
