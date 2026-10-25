@@ -5,9 +5,243 @@
   "customers": [],
   "orders": [],
   "productionBatches": [],
-  "fgBatches": [],
+  "fgBatches": [
+    {
+      "id": "fg-1792910368404",
+      "tenant_id": "0f866809-06c3-4771-8b93-4f2253c9b6b1",
+      "production_batch_id": "jword-1792910333743",
+      "product_id": "9bba3cee-fdb4-4ac3-bdeb-1fa3db3bf3a6",
+      "batch_number": "FG-JW-20261025-690",
+      "quantity_on_hand_kg": 100,
+      "quantity_reserved_kg": 0,
+      "quantity_dispatched_kg": 0,
+      "status": "in_stock",
+      "created_at": "2026-10-25T06:39:28.404Z"
+    },
+    {
+      "id": "fg-1792910368404",
+      "tenant_id": "0f866809-06c3-4771-8b93-4f2253c9b6b1",
+      "production_batch_id": "jword-1792910333743",
+      "product_id": "9bba3cee-fdb4-4ac3-bdeb-1fa3db3bf3a6",
+      "batch_number": "FG-JW-20261025-690",
+      "quantity_on_hand_kg": 100,
+      "quantity_reserved_kg": 0,
+      "quantity_dispatched_kg": 0,
+      "status": "in_stock",
+      "created_at": "2026-10-25T06:39:28.404Z"
+    }
+  ],
   "deliveries": [],
   "auditLogs": [
+    {
+      "id": "aud-1792910436583-719",
+      "action": "JOB_WORK_OUTWARD",
+      "entity_name": "Sent 100 kg of Type B to Job Worker Ayush Job Work via JW-OUT-202610-223",
+      "user_email": "shreeharipp@gmail.com",
+      "details": {
+        "id": "jwo-1792910436582",
+        "tenant_id": "0f866809-06c3-4771-8b93-4f2253c9b6b1",
+        "challan_number": "JW-OUT-202610-223",
+        "vendor_id": "jw-1792907609714",
+        "vendor_name": "Ayush Job Work",
+        "material_id": "52366eee-fb02-40e7-99cb-25f3cb38cec1",
+        "material_name": "Type B",
+        "source_batch_id": "610934fe-ee15-40ee-8da5-1275268b3eeb",
+        "source_batch_number": "MB-20261025-774",
+        "quantity_kg": 100,
+        "dispatch_date": "2026-10-25",
+        "vehicle_number": "",
+        "notes": "",
+        "created_at": "2026-10-25T06:40:36.583Z"
+      },
+      "created_at": "2026-10-25T06:40:36.583Z"
+    },
+    {
+      "id": "aud-1792910414508-779",
+      "action": "CREATE_JOB_WORK_ORDER",
+      "entity_name": "Issued Job Work Order JWO-202610-418 to Ayush Job Work for 100 kg of pRODUCT 2",
+      "user_email": "shreeharipp@gmail.com",
+      "details": {
+        "id": "jword-1792910414508",
+        "tenant_id": "0f866809-06c3-4771-8b93-4f2253c9b6b1",
+        "order_number": "JWO-202610-418",
+        "vendor_id": "jw-1792907609714",
+        "vendor_name": "Ayush Job Work",
+        "product_id": "9bba3cee-fdb4-4ac3-bdeb-1fa3db3bf3a6",
+        "product_name": "pRODUCT 2",
+        "recipe_id": "e94a3beb-b13f-42d3-9425-958b1ed6a43e",
+        "recipe_name": "Recipe v1",
+        "recipe_items": [
+          {
+            "id": "480643b6-f3ed-4065-9f52-2afe0248229c",
+            "material_id": "52366eee-fb02-40e7-99cb-25f3cb38cec1",
+            "material_name": "Type B",
+            "percentage": 100,
+            "planned_kg_per_kg_output": 1
+          }
+        ],
+        "planned_quantity_kg": 100,
+        "received_quantity_kg": 0,
+        "scrap_quantity_kg": 0,
+        "customer_id": null,
+        "customer_name": null,
+        "target_size": "12*18",
+        "target_micron": 60,
+        "status": "in_progress",
+        "expected_delivery_date": "2026-10-25",
+        "instructions": "",
+        "created_at": "2026-10-25T06:40:14.508Z",
+        "updated_at": "2026-10-25T06:40:14.508Z"
+      },
+      "created_at": "2026-10-25T06:40:14.508Z"
+    },
+    {
+      "id": "aud-1792910381204-588",
+      "action": "CREATE_JOB_WORK_ORDER",
+      "entity_name": "Issued Job Work Order JWO-202610-945 to Ayush Job Work for 100 kg of pRODUCT 2",
+      "user_email": "shreeharipp@gmail.com",
+      "details": {
+        "id": "jword-1792910381204",
+        "tenant_id": "0f866809-06c3-4771-8b93-4f2253c9b6b1",
+        "order_number": "JWO-202610-945",
+        "vendor_id": "jw-1792907609714",
+        "vendor_name": "Ayush Job Work",
+        "product_id": "9bba3cee-fdb4-4ac3-bdeb-1fa3db3bf3a6",
+        "product_name": "pRODUCT 2",
+        "recipe_id": "e94a3beb-b13f-42d3-9425-958b1ed6a43e",
+        "recipe_name": "Default Formulation",
+        "recipe_items": [
+          {
+            "id": "480643b6-f3ed-4065-9f52-2afe0248229c",
+            "materials": {
+              "id": "52366eee-fb02-40e7-99cb-25f3cb38cec1",
+              "code": "MAT-8344",
+              "name": "Type B"
+            },
+            "percentage": 100,
+            "material_id": "52366eee-fb02-40e7-99cb-25f3cb38cec1",
+            "planned_kg_per_kg_output": 1
+          }
+        ],
+        "planned_quantity_kg": 100,
+        "received_quantity_kg": 0,
+        "scrap_quantity_kg": 0,
+        "customer_id": null,
+        "customer_name": null,
+        "target_size": "12*18",
+        "target_micron": 60,
+        "status": "in_progress",
+        "expected_delivery_date": "2026-10-25",
+        "instructions": "",
+        "created_at": "2026-10-25T06:39:41.204Z",
+        "updated_at": "2026-10-25T06:39:41.204Z"
+      },
+      "created_at": "2026-10-25T06:39:41.204Z"
+    },
+    {
+      "id": "aud-1792910368404-652",
+      "action": "JOB_WORK_RECEIPT",
+      "entity_name": "Received 100 kg for Job Work Order JWO-202610-631 from Ayush Job Work",
+      "user_email": "shreeharipp@gmail.com",
+      "details": {
+        "id": "jwr-1792910368404",
+        "tenant_id": "0f866809-06c3-4771-8b93-4f2253c9b6b1",
+        "receipt_number": "JW-REC-202610-322",
+        "job_work_order_id": "jword-1792910333743",
+        "job_work_order_number": "JWO-202610-631",
+        "vendor_id": "jw-1792907609714",
+        "vendor_name": "Ayush Job Work",
+        "product_id": "9bba3cee-fdb4-4ac3-bdeb-1fa3db3bf3a6",
+        "product_name": "pRODUCT 2",
+        "accepted_quantity_kg": 100,
+        "scrap_quantity_kg": 0,
+        "total_input_consumed_kg": 100,
+        "materials_consumed": [
+          {
+            "material_id": "52366eee-fb02-40e7-99cb-25f3cb38cec1",
+            "material_name": "Type B",
+            "percentage": 100,
+            "consumed_kg": 100
+          }
+        ],
+        "delivery_destination": "factory_stock",
+        "customer_id": null,
+        "customer_name": null,
+        "fg_batch_id": "fg-1792910368404",
+        "delivery_id": "",
+        "vehicle_number": "",
+        "delivery_date": "2026-10-25",
+        "notes": "",
+        "created_at": "2026-10-25T06:39:28.404Z"
+      },
+      "created_at": "2026-10-25T06:39:28.404Z"
+    },
+    {
+      "id": "aud-1792910333744-250",
+      "action": "CREATE_JOB_WORK_ORDER",
+      "entity_name": "Issued Job Work Order JWO-202610-631 to Ayush Job Work for 100 kg of pRODUCT 2",
+      "user_email": "shreeharipp@gmail.com",
+      "details": {
+        "id": "jword-1792910333743",
+        "tenant_id": "0f866809-06c3-4771-8b93-4f2253c9b6b1",
+        "order_number": "JWO-202610-631",
+        "vendor_id": "jw-1792907609714",
+        "vendor_name": "Ayush Job Work",
+        "product_id": "9bba3cee-fdb4-4ac3-bdeb-1fa3db3bf3a6",
+        "product_name": "pRODUCT 2",
+        "recipe_id": "e94a3beb-b13f-42d3-9425-958b1ed6a43e",
+        "recipe_name": "Default Formulation",
+        "recipe_items": [
+          {
+            "id": "480643b6-f3ed-4065-9f52-2afe0248229c",
+            "materials": {
+              "id": "52366eee-fb02-40e7-99cb-25f3cb38cec1",
+              "code": "MAT-8344",
+              "name": "Type B"
+            },
+            "percentage": 100,
+            "material_id": "52366eee-fb02-40e7-99cb-25f3cb38cec1",
+            "planned_kg_per_kg_output": 1
+          }
+        ],
+        "planned_quantity_kg": 100,
+        "received_quantity_kg": 100,
+        "scrap_quantity_kg": 0,
+        "customer_id": null,
+        "customer_name": null,
+        "target_size": "12*18",
+        "target_micron": 60,
+        "status": "completed",
+        "expected_delivery_date": "2026-10-25",
+        "instructions": "",
+        "created_at": "2026-10-25T06:38:53.743Z",
+        "updated_at": "2026-10-25T06:39:28.404Z"
+      },
+      "created_at": "2026-10-25T06:38:53.744Z"
+    },
+    {
+      "id": "aud-1792910006514-956",
+      "action": "JOB_WORK_OUTWARD",
+      "entity_name": "Sent 500 kg of Type B to Job Worker Ayush Job Work via JW-OUT-202610-793",
+      "user_email": "shreeharipp@gmail.com",
+      "details": {
+        "id": "jwo-1792910006514",
+        "tenant_id": "0f866809-06c3-4771-8b93-4f2253c9b6b1",
+        "challan_number": "JW-OUT-202610-793",
+        "vendor_id": "jw-1792907609714",
+        "vendor_name": "Ayush Job Work",
+        "material_id": "52366eee-fb02-40e7-99cb-25f3cb38cec1",
+        "material_name": "Type B",
+        "source_batch_id": "610934fe-ee15-40ee-8da5-1275268b3eeb",
+        "source_batch_number": "MB-20261025-774",
+        "quantity_kg": 500,
+        "dispatch_date": "2026-10-25",
+        "vehicle_number": "",
+        "notes": "",
+        "created_at": "2026-10-25T06:33:26.514Z"
+      },
+      "created_at": "2026-10-25T06:33:26.514Z"
+    },
     {
       "id": "aud-1792909842395-237",
       "action": "JOB_WORK_OUTWARD",
@@ -243,6 +477,38 @@
   ],
   "jobWorkMaterialOutward": [
     {
+      "id": "jwo-1792910436582",
+      "tenant_id": "0f866809-06c3-4771-8b93-4f2253c9b6b1",
+      "challan_number": "JW-OUT-202610-223",
+      "vendor_id": "jw-1792907609714",
+      "vendor_name": "Ayush Job Work",
+      "material_id": "52366eee-fb02-40e7-99cb-25f3cb38cec1",
+      "material_name": "Type B",
+      "source_batch_id": "610934fe-ee15-40ee-8da5-1275268b3eeb",
+      "source_batch_number": "MB-20261025-774",
+      "quantity_kg": 100,
+      "dispatch_date": "2026-10-25",
+      "vehicle_number": "",
+      "notes": "",
+      "created_at": "2026-10-25T06:40:36.583Z"
+    },
+    {
+      "id": "jwo-1792910006514",
+      "tenant_id": "0f866809-06c3-4771-8b93-4f2253c9b6b1",
+      "challan_number": "JW-OUT-202610-793",
+      "vendor_id": "jw-1792907609714",
+      "vendor_name": "Ayush Job Work",
+      "material_id": "52366eee-fb02-40e7-99cb-25f3cb38cec1",
+      "material_name": "Type B",
+      "source_batch_id": "610934fe-ee15-40ee-8da5-1275268b3eeb",
+      "source_batch_number": "MB-20261025-774",
+      "quantity_kg": 500,
+      "dispatch_date": "2026-10-25",
+      "vehicle_number": "",
+      "notes": "",
+      "created_at": "2026-10-25T06:33:26.514Z"
+    },
+    {
       "id": "jwo-1792909842395",
       "tenant_id": "0f866809-06c3-4771-8b93-4f2253c9b6b1",
       "challan_number": "JW-OUT-202610-322",
@@ -277,6 +543,110 @@
   ],
   "jobWorkOrders": [
     {
+      "id": "jword-1792910414508",
+      "tenant_id": "0f866809-06c3-4771-8b93-4f2253c9b6b1",
+      "order_number": "JWO-202610-418",
+      "vendor_id": "jw-1792907609714",
+      "vendor_name": "Ayush Job Work",
+      "product_id": "9bba3cee-fdb4-4ac3-bdeb-1fa3db3bf3a6",
+      "product_name": "pRODUCT 2",
+      "recipe_id": "e94a3beb-b13f-42d3-9425-958b1ed6a43e",
+      "recipe_name": "Recipe v1",
+      "recipe_items": [
+        {
+          "id": "480643b6-f3ed-4065-9f52-2afe0248229c",
+          "material_id": "52366eee-fb02-40e7-99cb-25f3cb38cec1",
+          "material_name": "Type B",
+          "percentage": 100,
+          "planned_kg_per_kg_output": 1
+        }
+      ],
+      "planned_quantity_kg": 100,
+      "received_quantity_kg": 0,
+      "scrap_quantity_kg": 0,
+      "customer_id": null,
+      "customer_name": null,
+      "target_size": "12*18",
+      "target_micron": 60,
+      "status": "in_progress",
+      "expected_delivery_date": "2026-10-25",
+      "instructions": "",
+      "created_at": "2026-10-25T06:40:14.508Z",
+      "updated_at": "2026-10-25T06:40:14.508Z"
+    },
+    {
+      "id": "jword-1792910381204",
+      "tenant_id": "0f866809-06c3-4771-8b93-4f2253c9b6b1",
+      "order_number": "JWO-202610-945",
+      "vendor_id": "jw-1792907609714",
+      "vendor_name": "Ayush Job Work",
+      "product_id": "9bba3cee-fdb4-4ac3-bdeb-1fa3db3bf3a6",
+      "product_name": "pRODUCT 2",
+      "recipe_id": "e94a3beb-b13f-42d3-9425-958b1ed6a43e",
+      "recipe_name": "Default Formulation",
+      "recipe_items": [
+        {
+          "id": "480643b6-f3ed-4065-9f52-2afe0248229c",
+          "materials": {
+            "id": "52366eee-fb02-40e7-99cb-25f3cb38cec1",
+            "code": "MAT-8344",
+            "name": "Type B"
+          },
+          "percentage": 100,
+          "material_id": "52366eee-fb02-40e7-99cb-25f3cb38cec1",
+          "planned_kg_per_kg_output": 1
+        }
+      ],
+      "planned_quantity_kg": 100,
+      "received_quantity_kg": 0,
+      "scrap_quantity_kg": 0,
+      "customer_id": null,
+      "customer_name": null,
+      "target_size": "12*18",
+      "target_micron": 60,
+      "status": "in_progress",
+      "expected_delivery_date": "2026-10-25",
+      "instructions": "",
+      "created_at": "2026-10-25T06:39:41.204Z",
+      "updated_at": "2026-10-25T06:39:41.204Z"
+    },
+    {
+      "id": "jword-1792910333743",
+      "tenant_id": "0f866809-06c3-4771-8b93-4f2253c9b6b1",
+      "order_number": "JWO-202610-631",
+      "vendor_id": "jw-1792907609714",
+      "vendor_name": "Ayush Job Work",
+      "product_id": "9bba3cee-fdb4-4ac3-bdeb-1fa3db3bf3a6",
+      "product_name": "pRODUCT 2",
+      "recipe_id": "e94a3beb-b13f-42d3-9425-958b1ed6a43e",
+      "recipe_name": "Default Formulation",
+      "recipe_items": [
+        {
+          "id": "480643b6-f3ed-4065-9f52-2afe0248229c",
+          "materials": {
+            "id": "52366eee-fb02-40e7-99cb-25f3cb38cec1",
+            "code": "MAT-8344",
+            "name": "Type B"
+          },
+          "percentage": 100,
+          "material_id": "52366eee-fb02-40e7-99cb-25f3cb38cec1",
+          "planned_kg_per_kg_output": 1
+        }
+      ],
+      "planned_quantity_kg": 100,
+      "received_quantity_kg": 100,
+      "scrap_quantity_kg": 0,
+      "customer_id": null,
+      "customer_name": null,
+      "target_size": "12*18",
+      "target_micron": 60,
+      "status": "completed",
+      "expected_delivery_date": "2026-10-25",
+      "instructions": "",
+      "created_at": "2026-10-25T06:38:53.743Z",
+      "updated_at": "2026-10-25T06:39:28.404Z"
+    },
+    {
       "id": "jword-1792908813019",
       "tenant_id": "0f866809-06c3-4771-8b93-4f2253c9b6b1",
       "order_number": "JWO-202610-946",
@@ -299,5 +669,37 @@
       "created_at": "2026-10-25T06:13:33.019Z"
     }
   ],
-  "jobWorkReceipts": []
+  "jobWorkReceipts": [
+    {
+      "id": "jwr-1792910368404",
+      "tenant_id": "0f866809-06c3-4771-8b93-4f2253c9b6b1",
+      "receipt_number": "JW-REC-202610-322",
+      "job_work_order_id": "jword-1792910333743",
+      "job_work_order_number": "JWO-202610-631",
+      "vendor_id": "jw-1792907609714",
+      "vendor_name": "Ayush Job Work",
+      "product_id": "9bba3cee-fdb4-4ac3-bdeb-1fa3db3bf3a6",
+      "product_name": "pRODUCT 2",
+      "accepted_quantity_kg": 100,
+      "scrap_quantity_kg": 0,
+      "total_input_consumed_kg": 100,
+      "materials_consumed": [
+        {
+          "material_id": "52366eee-fb02-40e7-99cb-25f3cb38cec1",
+          "material_name": "Type B",
+          "percentage": 100,
+          "consumed_kg": 100
+        }
+      ],
+      "delivery_destination": "factory_stock",
+      "customer_id": null,
+      "customer_name": null,
+      "fg_batch_id": "fg-1792910368404",
+      "delivery_id": "",
+      "vehicle_number": "",
+      "delivery_date": "2026-10-25",
+      "notes": "",
+      "created_at": "2026-10-25T06:39:28.404Z"
+    }
+  ]
 }

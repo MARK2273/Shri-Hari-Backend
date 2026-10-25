@@ -73,20 +73,32 @@ async function findProduct(productId: string, tenantId: string) {
           *,
           product_recipes (
             id,
-            name,
             version,
-            is_default,
+            is_active,
+            notes,
+            effective_date,
             product_recipe_items (
               id,
               material_id,
               percentage,
+              planned_kg_per_kg_output,
               materials (id, name, code)
             )
           )
         `)
         .eq('id', productId)
         .maybeSingle();
+
       if (data && !error) return data;
+
+      // Fallback simple query in case nested relations differ
+      const { data: simpleData } = await supabase
+        .from('products')
+        .select('*')
+        .eq('id', productId)
+        .maybeSingle();
+
+      if (simpleData) return simpleData;
     } catch (err) {
       console.warn('Supabase product query fallback:', err);
     }
@@ -408,6 +420,7 @@ export const createJobWorkOrder = async (req: Request, res: Response) => {
     const recipesList = product?.product_recipes || product?.recipes || [];
     const recipe =
       recipesList.find((r: any) => r.id === recipeId) ||
+      recipesList.find((r: any) => r.is_active) ||
       recipesList.find((r: any) => r.is_default) ||
       recipesList[0];
 
@@ -418,6 +431,15 @@ export const createJobWorkOrder = async (req: Request, res: Response) => {
     }
 
     const orderNumber = `JWO-${new Date().getFullYear()}${String(new Date().getMonth() + 1).padStart(2, '0')}-${Math.floor(100 + Math.random() * 900)}`;
+    const recipeName =
+      recipe?.name || (recipe?.version ? `Recipe v${recipe.version}` : 'Standard Formulation');
+    const normalizedRecipeItems = (recipe?.product_recipe_items || recipe?.recipe_items || []).map((it: any) => ({
+      id: it.id,
+      material_id: it.material_id,
+      material_name: it.materials?.name || it.material_name || 'Raw Material',
+      percentage: Number(it.percentage) || 0,
+      planned_kg_per_kg_output: Number(it.planned_kg_per_kg_output) || 1,
+    }));
 
     const newOrder = {
       id: `jword-${Date.now()}`,
@@ -428,8 +450,8 @@ export const createJobWorkOrder = async (req: Request, res: Response) => {
       product_id: productId,
       product_name: product?.name || 'Manufactured Item',
       recipe_id: recipe?.id || '',
-      recipe_name: recipe?.name || 'Default Formulation',
-      recipe_items: recipe?.product_recipe_items || recipe?.recipe_items || [],
+      recipe_name: recipeName,
+      recipe_items: normalizedRecipeItems,
       planned_quantity_kg: plannedKg,
       received_quantity_kg: 0,
       scrap_quantity_kg: 0,
