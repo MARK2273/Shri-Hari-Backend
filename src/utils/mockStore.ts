@@ -26,6 +26,10 @@ export interface MockStoreData {
   auditLogs: any[];
   sizeMicrons: any[];
   suppliers: any[];
+  jobWorkers: any[];
+  jobWorkMaterialOutward: any[];
+  jobWorkOrders: any[];
+  jobWorkReceipts: any[];
 }
 
 const defaultData: MockStoreData = {
@@ -40,6 +44,33 @@ const defaultData: MockStoreData = {
   auditLogs: [],
   sizeMicrons: [],
   suppliers: [],
+  jobWorkers: [
+    {
+      id: 'jw-001',
+      tenant_id: 'shri-hari-pack',
+      name: 'Apex Extruders & Converters',
+      contact_person: 'Rajesh Sharma',
+      phone: '+91 98765 43210',
+      email: 'rajesh@apexextruders.com',
+      address: 'Plot 45, GIDC Industrial Estate, Ankleshwar',
+      is_active: true,
+      created_at: new Date().toISOString(),
+    },
+    {
+      id: 'jw-002',
+      tenant_id: 'shri-hari-pack',
+      name: 'Krishna Polymer Processors',
+      contact_person: 'Vikram Patel',
+      phone: '+91 98250 12345',
+      email: 'vikram@krishnapolymers.com',
+      address: 'Shed 12, Sachin GIDC, Surat',
+      is_active: true,
+      created_at: new Date().toISOString(),
+    },
+  ],
+  jobWorkMaterialOutward: [],
+  jobWorkOrders: [],
+  jobWorkReceipts: [],
 };
 
 function loadStore(): MockStoreData {
@@ -59,6 +90,10 @@ function loadStore(): MockStoreData {
         auditLogs: parsed.auditLogs || [],
         sizeMicrons: parsed.sizeMicrons || [],
         suppliers: parsed.suppliers || [],
+        jobWorkers: parsed.jobWorkers?.length ? parsed.jobWorkers : defaultData.jobWorkers,
+        jobWorkMaterialOutward: parsed.jobWorkMaterialOutward || [],
+        jobWorkOrders: parsed.jobWorkOrders || [],
+        jobWorkReceipts: parsed.jobWorkReceipts || [],
       };
     }
   } catch (err) {
