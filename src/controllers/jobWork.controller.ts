@@ -559,6 +559,10 @@ export const receiveJobWorkFinishedGoods = async (req: Request, res: Response) =
     let fgBatchId = '';
     if (deliveryDestination !== 'direct_customer') {
       const lotNumber = `FG-JW-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}-${Math.floor(100 + Math.random() * 900)}`;
+      const vendorName = vendor?.name || order.vendor_name || 'Job Worker';
+      const operatorLabel = `Job Work: ${vendorName}`;
+
+      let pbId = order.id;
 
       if (isSupabaseConfigured && supabase) {
         try {
@@ -569,11 +573,14 @@ export const receiveJobWorkFinishedGoods = async (req: Request, res: Response) =
               tenant_id: tenantId,
               batch_number: pbBatchNumber,
               product_id: order.product_id,
-              operator_name: `${vendor?.name || 'Job Worker'} (Outsourced)`,
-              status: 'completed',
-              total_input_kg: totalInputConsumed,
+              recipe_id: order.recipe_id || null,
+              operator_name: operatorLabel,
+              planned_quantity_kg: Number(order.planned_quantity_kg) || acceptedKg,
+              actual_input_kg: totalInputConsumed,
               accepted_output_kg: acceptedKg,
               waste_kg: scrapKg,
+              status: 'completed',
+              notes: `Outsourced Job Work batch processed by ${vendorName} for Order ${order.order_number}`,
               start_time: new Date().toISOString(),
               completion_time: new Date().toISOString(),
             })
@@ -581,7 +588,8 @@ export const receiveJobWorkFinishedGoods = async (req: Request, res: Response) =
             .maybeSingle();
 
           if (pbData && !pbErr) {
-            const { data: fgData } = await supabase
+            pbId = pbData.id;
+            const { data: fgData, error: fgErr } = await supabase
               .from('finished_goods_batches')
               .insert({
                 tenant_id: tenantId,
@@ -594,28 +602,35 @@ export const receiveJobWorkFinishedGoods = async (req: Request, res: Response) =
                 quantity_dispatched_kg: 0,
                 status: 'in_stock',
                 created_at: new Date().toISOString(),
+                updated_at: new Date().toISOString(),
               })
               .select()
               .maybeSingle();
 
             if (fgData) fgBatchId = fgData.id;
+            if (fgErr) console.error('Supabase FG batch insert error:', fgErr);
+          } else if (pbErr) {
+            console.error('Supabase PB batch insert error:', pbErr);
           }
         } catch (dbErr) {
           console.error('Failed to record FG batch in Supabase:', dbErr);
         }
       }
 
-      const newFGBatch: InMemFGBatch = {
+      const newFGBatch: any = {
         id: fgBatchId || `fg-${Date.now()}`,
         tenant_id: tenantId,
-        production_batch_id: order.id,
+        production_batch_id: pbId,
         product_id: order.product_id,
         batch_number: lotNumber,
+        operator_name: operatorLabel,
+        quantity_produced_kg: acceptedKg,
         quantity_on_hand_kg: acceptedKg,
         quantity_reserved_kg: 0,
         quantity_dispatched_kg: 0,
         status: 'in_stock',
         created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
       };
 
       if (!mockStore.fgBatches) mockStore.fgBatches = [];
