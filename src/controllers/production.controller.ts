@@ -32,6 +32,9 @@ export interface InMemProductionBatch {
   customer_orders?: any;
   products?: any;
   product_recipes?: any;
+  size_micron?: string;
+  is_slitting_batch?: boolean;
+  slitting_plan?: any[];
   production_material_consumption?: any[];
   production_outputs?: any[];
 }
@@ -116,6 +119,17 @@ export const createProductionBatch = async (req: Request, res: Response) => {
       operatorName: z.string().optional(),
       supervisorId: z.string().optional(),
       notes: z.string().optional(),
+      sizeMicron: z.string().optional(),
+      isSlittingBatch: z.boolean().optional().default(false),
+      slittingPlan: z.array(z.object({
+        orderId: z.string(),
+        orderItemId: z.string().optional().default(''),
+        orderNumber: z.string().optional(),
+        customerName: z.string().optional(),
+        targetSizeMicron: z.string(),
+        targetWeightKg: z.number(),
+        percentage: z.number().optional()
+      })).optional().default([]),
     });
 
     const body = schema.parse(req.body);
@@ -148,6 +162,9 @@ export const createProductionBatch = async (req: Request, res: Response) => {
         recipe_id: recipe?.id || body.recipeId || 'rec-default',
         batch_number: resolvedBatchNumber,
         planned_quantity_kg: body.plannedQuantityKg,
+        size_micron: body.sizeMicron || (ord as any).size_micron || 'Standard',
+        is_slitting_batch: body.isSlittingBatch || false,
+        slitting_plan: body.slittingPlan || [],
         status: 'draft',
         operator_id: body.operatorId || userId,
         operator_name: body.operatorName || undefined,
@@ -170,6 +187,16 @@ export const createProductionBatch = async (req: Request, res: Response) => {
 
       ord.status = 'in_production';
       if (orderItem) orderItem.status = 'in_production';
+
+      if (body.isSlittingBatch && body.slittingPlan?.length > 0) {
+        body.slittingPlan.forEach((sp) => {
+          const mOrd = inMemOrders.find((o) => o.id === sp.orderId);
+          if (mOrd) {
+            mOrd.status = 'in_production';
+            if (mOrd.customer_order_items?.[0]) mOrd.customer_order_items[0].status = 'in_production';
+          }
+        });
+      }
 
       saveMockStore();
 
@@ -195,9 +222,12 @@ export const createProductionBatch = async (req: Request, res: Response) => {
         order_id: body.orderId,
         order_item_id: body.orderItemId,
         product_id: orderItem.product_id,
-        recipe_id: body.recipeId,
+        recipe_id: body.recipeId || null,
         batch_number: resolvedBatchNumber,
         planned_quantity_kg: body.plannedQuantityKg,
+        size_micron: body.sizeMicron || null,
+        is_slitting_batch: body.isSlittingBatch || false,
+        slitting_plan: body.slittingPlan || [],
         status: 'draft',
         operator_id: body.operatorId || userId,
         operator_name: body.operatorName || null,
@@ -220,6 +250,24 @@ export const createProductionBatch = async (req: Request, res: Response) => {
       .from('customer_order_items')
       .update({ status: 'in_production' })
       .eq('id', body.orderItemId);
+
+    // If multi-order slitting, update all merged orders to in_production
+    if (body.isSlittingBatch && body.slittingPlan?.length > 0) {
+      for (const sp of body.slittingPlan) {
+        if (sp.orderId) {
+          await supabase
+            .from('customer_orders')
+            .update({ status: 'in_production', updated_at: new Date().toISOString() })
+            .eq('id', sp.orderId);
+        }
+        if (sp.orderItemId) {
+          await supabase
+            .from('customer_order_items')
+            .update({ status: 'in_production' })
+            .eq('id', sp.orderItemId);
+        }
+      }
+    }
 
     return res.status(201).json({ success: true, batch });
   } catch (error: any) {
@@ -253,7 +301,15 @@ export const confirmProductionBatch = async (req: Request, res: Response) => {
       wasteKg: z.number().nonnegative().optional(),
       rejectedKg: z.number().nonnegative().default(0),
       operatorName: z.string().optional(),
-      notes: z.string().optional()
+      notes: z.string().optional(),
+      splitOutputs: z.array(z.object({
+        orderId: z.string().optional(),
+        orderItemId: z.string().optional(),
+        customerName: z.string().optional(),
+        sizeMicron: z.string(),
+        acceptedKg: z.number().positive(),
+        lotSuffix: z.string().optional()
+      })).optional()
     });
 
     const body = schema.parse(req.body);
@@ -323,36 +379,74 @@ export const confirmProductionBatch = async (req: Request, res: Response) => {
         },
       ];
 
-      // Create Finished Goods batch
-      const fgBatchNumber = `FG-${batch.batch_number.replace('PB-', '')}`;
-      const newFGBatch: InMemFGBatch = {
-        id: `fg-${Date.now()}`,
-        tenant_id: tenantId,
-        product_id: batch.product_id,
-        production_batch_id: batch.id,
-        batch_number: fgBatchNumber,
-        quantity_on_hand_kg: body.acceptedOutputKg,
-        quantity_reserved_kg: 0,
-        quantity_dispatched_kg: 0,
-        status: 'available',
-        created_at: new Date().toISOString(),
-      };
-      inMemFGBatches.unshift(newFGBatch);
+      // Slitting Output Split vs Single Batch
+      const fgBatchBase = `FG-${batch.batch_number.replace('PB-', '')}`;
+      const isSlitting = Boolean(batch.is_slitting_batch || (body.splitOutputs && body.splitOutputs.length > 0));
 
-      // Update customer order produced kg
-      const ord = inMemOrders.find((o) => o.id === batch.order_id);
-      if (ord) {
-        const orderItem =
-          ord.customer_order_items?.find((i) => i.id === batch.order_item_id) ||
-          ord.customer_order_items?.[0];
-        if (orderItem) {
-          orderItem.produced_quantity_kg =
-            (orderItem.produced_quantity_kg || 0) + body.acceptedOutputKg;
-          if (orderItem.produced_quantity_kg >= orderItem.requested_quantity_kg) {
-            orderItem.status = 'produced';
+      let effectiveSplits: Array<{
+        orderId?: string;
+        orderItemId?: string;
+        customerName?: string;
+        sizeMicron: string;
+        acceptedKg: number;
+        lotSuffix?: string;
+      }> = [];
+
+      if (body.splitOutputs && body.splitOutputs.length > 0) {
+        effectiveSplits = body.splitOutputs;
+      } else if (isSlitting && batch.slitting_plan && batch.slitting_plan.length > 0) {
+        const totalPlanned = batch.slitting_plan.reduce((s: number, p: any) => s + (Number(p.targetWeightKg) || 0), 0) || Number(batch.planned_quantity_kg) || 1;
+        effectiveSplits = batch.slitting_plan.map((sp: any, i: number) => {
+          const ratio = (Number(sp.targetWeightKg) || 0) / totalPlanned;
+          return {
+            orderId: sp.orderId,
+            orderItemId: sp.orderItemId,
+            customerName: sp.customerName,
+            sizeMicron: sp.targetSizeMicron || '330 - 20 Micron',
+            acceptedKg: Number((body.acceptedOutputKg * ratio).toFixed(2)),
+            lotSuffix: String.fromCharCode(65 + i)
+          };
+        });
+      } else {
+        effectiveSplits = [{
+          orderId: batch.order_id,
+          orderItemId: batch.order_item_id,
+          sizeMicron: batch.size_micron || 'Standard',
+          acceptedKg: body.acceptedOutputKg,
+          lotSuffix: ''
+        }];
+      }
+
+      effectiveSplits.forEach((sp, idx) => {
+        const lotNumber = sp.lotSuffix ? `${fgBatchBase}-${sp.lotSuffix}` : fgBatchBase;
+        const newFGBatch: InMemFGBatch = {
+          id: `fg-${Date.now()}-${idx}`,
+          tenant_id: tenantId,
+          product_id: batch.product_id,
+          production_batch_id: batch.id,
+          batch_number: lotNumber,
+          size_micron: sp.sizeMicron,
+          quantity_on_hand_kg: sp.acceptedKg,
+          quantity_reserved_kg: 0,
+          quantity_dispatched_kg: 0,
+          status: 'available',
+          created_at: new Date().toISOString(),
+        };
+        inMemFGBatches.unshift(newFGBatch);
+
+        if (sp.orderId) {
+          const targetOrd = inMemOrders.find((o) => o.id === sp.orderId);
+          if (targetOrd) {
+            const item = targetOrd.customer_order_items?.find((i: any) => i.id === sp.orderItemId) || targetOrd.customer_order_items?.[0];
+            if (item) {
+              item.produced_quantity_kg = (item.produced_quantity_kg || 0) + sp.acceptedKg;
+              if (item.produced_quantity_kg >= item.requested_quantity_kg) {
+                item.status = 'produced';
+              }
+            }
           }
         }
-      }
+      });
 
       saveMockStore();
 
@@ -367,7 +461,7 @@ export const confirmProductionBatch = async (req: Request, res: Response) => {
           plant_waste_kg: plantWaste,
           waste_kg: totalWaste,
           rejected_kg: body.rejectedKg,
-          fg_batch_created: fgBatchNumber,
+          fg_batches_created: effectiveSplits.map((s, i) => s.lotSuffix ? `${fgBatchBase}-${s.lotSuffix}` : fgBatchBase),
         },
       });
     }
@@ -475,39 +569,152 @@ export const confirmProductionBatch = async (req: Request, res: Response) => {
       notes: body.notes
     });
 
-    // 5. Create Finished Goods Batch (FG-02, FG-03)
-    const fgBatchNumber = `FG-${batch.batch_number}`;
-    const { data: fgBatch, error: fgErr } = await supabase
-      .from('finished_goods_batches')
-      .insert({
+    // 5. Create Finished Goods Batches (supports multi-order slitting split or single batch)
+    const fgBatchBase = `FG-${batch.batch_number}`;
+    const isSlitting = Boolean(batch.is_slitting_batch || (body.splitOutputs && body.splitOutputs.length > 0));
+
+    let effectiveSplits: Array<{
+      orderId?: string;
+      orderItemId?: string;
+      customerName?: string;
+      sizeMicron: string;
+      acceptedKg: number;
+      lotSuffix?: string;
+    }> = [];
+
+    if (body.splitOutputs && body.splitOutputs.length > 0) {
+      effectiveSplits = body.splitOutputs;
+    } else if (isSlitting && batch.slitting_plan && Array.isArray(batch.slitting_plan) && batch.slitting_plan.length > 0) {
+      const totalPlanned = batch.slitting_plan.reduce((s: number, p: any) => s + (Number(p.targetWeightKg) || 0), 0) || Number(batch.planned_quantity_kg) || 1;
+      effectiveSplits = batch.slitting_plan.map((sp: any, i: number) => {
+        const ratio = (Number(sp.targetWeightKg) || 0) / totalPlanned;
+        return {
+          orderId: sp.orderId,
+          orderItemId: sp.orderItemId,
+          customerName: sp.customerName,
+          sizeMicron: sp.targetSizeMicron || '330 - 20 Micron',
+          acceptedKg: Number((body.acceptedOutputKg * ratio).toFixed(2)),
+          lotSuffix: String.fromCharCode(65 + i)
+        };
+      });
+      // Adjust rounding discrepancy to last split
+      const totalAllocated = effectiveSplits.reduce((s, it) => s + it.acceptedKg, 0);
+      const diff = Number((body.acceptedOutputKg - totalAllocated).toFixed(2));
+      if (diff !== 0 && effectiveSplits.length > 0) {
+        effectiveSplits[effectiveSplits.length - 1].acceptedKg = Number((effectiveSplits[effectiveSplits.length - 1].acceptedKg + diff).toFixed(2));
+      }
+    } else {
+      effectiveSplits = [{
+        orderId: batch.order_id,
+        orderItemId: batch.order_item_id,
+        sizeMicron: batch.size_micron || 'Standard',
+        acceptedKg: body.acceptedOutputKg,
+        lotSuffix: ''
+      }];
+    }
+
+    const createdFGBatchNumbers: string[] = [];
+    const createdFGBatches: any[] = [];
+
+    for (let idx = 0; idx < effectiveSplits.length; idx++) {
+      const split = effectiveSplits[idx];
+      const suffix = split.lotSuffix ? `-${split.lotSuffix}` : '';
+      const splitLotNumber = `${fgBatchBase}${suffix}`;
+      createdFGBatchNumbers.push(splitLotNumber);
+
+      const { data: fgBatch, error: fgErr } = await supabase
+        .from('finished_goods_batches')
+        .insert({
+          tenant_id: tenantId,
+          product_id: batch.product_id,
+          production_batch_id: batchId,
+          batch_number: splitLotNumber,
+          quantity_produced_kg: split.acceptedKg,
+          quantity_on_hand_kg: split.acceptedKg,
+          quantity_reserved_kg: 0,
+          quantity_dispatched_kg: 0,
+          status: 'in_stock',
+          size_micron: split.sizeMicron,
+          order_id: split.orderId || null,
+          customer_name: split.customerName || null
+        })
+        .select('*')
+        .single();
+
+      if (fgErr) throw fgErr;
+      createdFGBatches.push(fgBatch);
+
+      // Finished goods ledger entry
+      await supabase.from('inventory_transactions').insert({
         tenant_id: tenantId,
+        transaction_type: 'production_output',
+        item_type: 'finished_goods',
         product_id: batch.product_id,
-        production_batch_id: batchId,
-        batch_number: fgBatchNumber,
-        quantity_produced_kg: body.acceptedOutputKg,
-        quantity_on_hand_kg: body.acceptedOutputKg,
-        quantity_reserved_kg: 0,
-        quantity_dispatched_kg: 0,
-        status: 'in_stock'
-      })
-      .select('*')
-      .single();
+        finished_goods_batch_id: fgBatch.id,
+        quantity_kg: split.acceptedKg,
+        reference_type: 'production_batch',
+        reference_id: batchId,
+        reason: isSlitting 
+          ? `Slit Roll ${split.lotSuffix || idx + 1} (${split.sizeMicron}) from extrusion batch ${batch.batch_number}` 
+          : `Output from production batch ${batch.batch_number}`,
+        created_by: userId
+      });
 
-    if (fgErr) throw fgErr;
+      // Update linked customer order items & customer orders
+      if (split.orderItemId) {
+        const { data: orderItem } = await supabase
+          .from('customer_order_items')
+          .select('produced_quantity_kg, requested_quantity_kg')
+          .eq('id', split.orderItemId)
+          .single();
 
-    // Finished goods ledger entry
-    await supabase.from('inventory_transactions').insert({
-      tenant_id: tenantId,
-      transaction_type: 'production_output',
-      item_type: 'finished_goods',
-      product_id: batch.product_id,
-      finished_goods_batch_id: fgBatch.id,
-      quantity_kg: body.acceptedOutputKg,
-      reference_type: 'production_batch',
-      reference_id: batchId,
-      reason: `Output from production batch ${batch.batch_number}`,
-      created_by: userId
-    });
+        const newProducedQty = Number(orderItem?.produced_quantity_kg || 0) + split.acceptedKg;
+        const isOrderComplete = newProducedQty >= Number(orderItem?.requested_quantity_kg);
+
+        await supabase
+          .from('customer_order_items')
+          .update({
+            produced_quantity_kg: newProducedQty,
+            status: isOrderComplete ? 'produced' : 'in_production'
+          })
+          .eq('id', split.orderItemId);
+      } else if (split.orderId) {
+        const { data: orderItems } = await supabase
+          .from('customer_order_items')
+          .select('id, produced_quantity_kg, requested_quantity_kg')
+          .eq('order_id', split.orderId);
+
+        if (orderItems && orderItems.length > 0) {
+          const item = orderItems[0];
+          const newProducedQty = Number(item.produced_quantity_kg || 0) + split.acceptedKg;
+          const isOrderComplete = newProducedQty >= Number(item.requested_quantity_kg);
+
+          await supabase
+            .from('customer_order_items')
+            .update({
+              produced_quantity_kg: newProducedQty,
+              status: isOrderComplete ? 'produced' : 'in_production'
+            })
+            .eq('id', item.id);
+        }
+      }
+
+      if (split.orderId) {
+        const { data: allItems } = await supabase
+          .from('customer_order_items')
+          .select('produced_quantity_kg, requested_quantity_kg')
+          .eq('order_id', split.orderId);
+
+        const allProduced = (allItems || []).every((i: any) => Number(i.produced_quantity_kg) >= Number(i.requested_quantity_kg));
+        await supabase
+          .from('customer_orders')
+          .update({
+            status: allProduced ? 'produced' : 'partially_produced',
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', split.orderId);
+      }
+    }
 
     // 6. Update Production Batch Header status to completed
     await supabase
@@ -526,39 +733,6 @@ export const confirmProductionBatch = async (req: Request, res: Response) => {
       })
       .eq('id', batchId);
 
-    // 7. Update Customer Order Item produced quantities
-    const { data: orderItem } = await supabase
-      .from('customer_order_items')
-      .select('produced_quantity_kg, requested_quantity_kg')
-      .eq('id', batch.order_item_id)
-      .single();
-
-    const newProducedQty = Number(orderItem?.produced_quantity_kg || 0) + body.acceptedOutputKg;
-    const isOrderComplete = newProducedQty >= Number(orderItem?.requested_quantity_kg);
-
-    await supabase
-      .from('customer_order_items')
-      .update({
-        produced_quantity_kg: newProducedQty,
-        status: isOrderComplete ? 'produced' : 'in_production'
-      })
-      .eq('id', batch.order_item_id);
-
-    // Check overall order status
-    const { data: allItems } = await supabase
-      .from('customer_order_items')
-      .select('produced_quantity_kg, requested_quantity_kg')
-      .eq('order_id', batch.order_id);
-
-    const allProduced = (allItems || []).every((i: any) => Number(i.produced_quantity_kg) >= Number(i.requested_quantity_kg));
-    await supabase
-      .from('customer_orders')
-      .update({
-        status: allProduced ? 'produced' : 'partially_produced',
-        updated_at: new Date().toISOString()
-      })
-      .eq('id', batch.order_id);
-
     // 8. Audit trail log
     await supabase.from('audit_logs').insert({
       tenant_id: tenantId,
@@ -573,7 +747,8 @@ export const confirmProductionBatch = async (req: Request, res: Response) => {
         plant_waste_kg: plantWaste,
         waste_kg: totalWaste,
         rejected_kg: body.rejectedKg,
-        fg_batch_id: fgBatch.id
+        fg_batch_id: createdFGBatches[0]?.id || null,
+        fg_batch_numbers: createdFGBatchNumbers
       }
     });
 
@@ -581,7 +756,8 @@ export const confirmProductionBatch = async (req: Request, res: Response) => {
       success: true,
       message: 'Production confirmed, raw materials consumed, and finished goods stocked.',
       production_batch_id: batchId,
-      finished_goods_batch: fgBatch
+      finished_goods_batches: createdFGBatches,
+      finished_goods_batch: createdFGBatches[0] || null
     });
   } catch (error: any) {
     if (error instanceof z.ZodError) {
