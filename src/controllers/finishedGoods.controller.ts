@@ -146,7 +146,8 @@ export const getFinishedGoodsInventory = async (req: Request, res: Response) => 
       .select(`
         *,
         products (id, code, name, unit),
-        production_batches (id, batch_number, operator_name, order_id, size_micron, customer_orders(order_number, size_micron))
+        customer_orders:order_id (id, order_number, customers (name)),
+        production_batches (id, batch_number, operator_name, order_id, size_micron, customer_orders(order_number, size_micron, customers (name)))
       `)
       .eq('tenant_id', tenantId)
       .order('created_at', { ascending: false });
@@ -159,9 +160,23 @@ export const getFinishedGoodsInventory = async (req: Request, res: Response) => 
         b.production_batches?.size_micron ||
         b.production_batches?.customer_orders?.size_micron ||
         'Standard';
+      const customerName =
+        b.customer_name ||
+        b.customer_orders?.customers?.name ||
+        b.production_batches?.customer_orders?.customers?.name ||
+        null;
+      const orderNumber =
+        b.customer_orders?.order_number ||
+        b.production_batches?.customer_orders?.order_number ||
+        null;
+      const linkedOrderId = b.order_id || b.production_batches?.order_id || null;
+
       return {
         ...b,
         size_micron: sizeMicron,
+        customer_name: customerName,
+        order_number: orderNumber,
+        order_id: linkedOrderId,
       };
     });
 

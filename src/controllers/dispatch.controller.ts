@@ -85,6 +85,7 @@ export const createAndConfirmDispatch = async (req: Request, res: Response) => {
       destinationAddress: z.string().min(3),
       vehicleNumber: z.string().optional(),
       notes: z.string().optional(),
+      allowCrossCustomerReallocation: z.boolean().optional(),
       items: z.array(z.object({
         orderItemId: z.string().min(1),
         productId: z.string().min(1),
@@ -115,6 +116,8 @@ export const createAndConfirmDispatch = async (req: Request, res: Response) => {
             fg.quantity_dispatched_kg = (fg.quantity_dispatched_kg || 0) + alloc.quantityKg;
             if (fg.quantity_on_hand_kg === 0) {
               fg.status = 'depleted';
+            } else {
+              fg.status = 'in_stock';
             }
           }
         }
@@ -206,7 +209,7 @@ export const createAndConfirmDispatch = async (req: Request, res: Response) => {
       for (const alloc of item.batchAllocations) {
         const { data: fgBatch, error: fgErr } = await supabase
           .from('finished_goods_batches')
-          .select('id, batch_number, quantity_on_hand_kg')
+          .select('id, batch_number, quantity_on_hand_kg, order_id, customer_name')
           .eq('id', alloc.finishedGoodsBatchId)
           .eq('tenant_id', tenantId)
           .single();
@@ -219,6 +222,15 @@ export const createAndConfirmDispatch = async (req: Request, res: Response) => {
           return res.status(400).json({
             success: false,
             message: `Insufficient finished stock in batch '${fgBatch.batch_number}'. Available: ${fgBatch.quantity_on_hand_kg} kg, Required: ${alloc.quantityKg} kg.`
+          });
+        }
+
+        // Cross-customer allocation guard
+        if (fgBatch.order_id && fgBatch.order_id !== body.orderId && !body.allowCrossCustomerReallocation) {
+          return res.status(400).json({
+            success: false,
+            isCrossCustomerWarning: true,
+            message: `Batch '${fgBatch.batch_number}' is reserved for ${fgBatch.customer_name || 'another customer order'}. Check 'Confirm Cross-Customer Reallocation' to proceed.`
           });
         }
       }
@@ -278,7 +290,7 @@ export const createAndConfirmDispatch = async (req: Request, res: Response) => {
 
         const newOnHand = Number(currentFG?.quantity_on_hand_kg) - alloc.quantityKg;
         const newDispatched = Number(currentFG?.quantity_dispatched_kg || 0) + alloc.quantityKg;
-        const status = newOnHand === 0 ? 'depleted' : 'partially_dispatched';
+        const status = newOnHand === 0 ? 'depleted' : 'in_stock';
 
         await supabase
           .from('finished_goods_batches')

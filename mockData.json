@@ -7,7 +7,19 @@
   "productionBatches": [],
   "fgBatches": [],
   "deliveries": [],
-  "auditLogs": [],
+  "auditLogs": [
+    {
+      "id": "aud-1792929020883-647",
+      "action": "CREATE_SIZE_MICRON",
+      "entity_name": "size_microns",
+      "user_email": "admin@shrihari.com",
+      "details": {
+        "label": "1200 - 20 Micron",
+        "id": "6e9efd96-96de-4e68-a4c0-4bf66ba60aba"
+      },
+      "created_at": "2026-10-25T11:50:20.883Z"
+    }
+  ],
   "sizeMicrons": [
     {
       "id": "5ff6159f-fecf-41fa-8f6f-590b298f900d",
