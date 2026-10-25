@@ -9,6 +9,53 @@
   "deliveries": [],
   "auditLogs": [
     {
+      "id": "aud-1792908813022-858",
+      "action": "CREATE_JOB_WORK_ORDER",
+      "entity_name": "Issued Job Work Order JWO-202610-946 to Ayush Job Work for 500 kg of undefined",
+      "user_email": "shreeharipp@gmail.com",
+      "details": {
+        "id": "jword-1792908813019",
+        "tenant_id": "0f866809-06c3-4771-8b93-4f2253c9b6b1",
+        "order_number": "JWO-202610-946",
+        "vendor_id": "jw-1792907609714",
+        "vendor_name": "Ayush Job Work",
+        "product_id": "85e7089b-bbd3-4bd1-8d3a-c722f78cdb0a",
+        "product_name": "Manufactured Item",
+        "recipe_id": "",
+        "recipe_items": [],
+        "planned_quantity_kg": 500,
+        "received_quantity_kg": 0,
+        "scrap_quantity_kg": 0,
+        "customer_id": null,
+        "customer_name": null,
+        "target_size": "Standard Roll",
+        "target_micron": 50,
+        "status": "in_progress",
+        "expected_delivery_date": null,
+        "notes": "",
+        "created_at": "2026-10-25T06:13:33.019Z"
+      },
+      "created_at": "2026-10-25T06:13:33.022Z"
+    },
+    {
+      "id": "aud-1792907609715-827",
+      "action": "CREATE_JOB_WORKER",
+      "entity_name": "Created job worker: Ayush Job Work",
+      "user_email": "shreeharipp@gmail.com",
+      "details": {
+        "id": "jw-1792907609714",
+        "tenant_id": "0f866809-06c3-4771-8b93-4f2253c9b6b1",
+        "name": "Ayush Job Work",
+        "contact_person": "Ayush",
+        "phone": "56435125653",
+        "email": "ayusn@yop.com",
+        "address": "Test Address",
+        "is_active": true,
+        "created_at": "2026-10-25T05:53:29.714Z"
+      },
+      "created_at": "2026-10-25T05:53:29.715Z"
+    },
+    {
       "id": "aud-1792841289246-828",
       "action": "UPDATE_SIZE_MICRON",
       "entity_name": "size_microns",
@@ -111,5 +158,67 @@
       "created_at": "2026-10-24T09:25:54.105Z",
       "updated_at": "2026-10-24T11:28:08.999Z"
     }
-  ]
+  ],
+  "suppliers": [],
+  "jobWorkers": [
+    {
+      "id": "jw-001",
+      "tenant_id": "shri-hari-pack",
+      "name": "Apex Extruders & Converters",
+      "contact_person": "Rajesh Sharma",
+      "phone": "+91 98765 43210",
+      "email": "rajesh@apexextruders.com",
+      "address": "Plot 45, GIDC Industrial Estate, Ankleshwar",
+      "is_active": true,
+      "created_at": "2026-10-25T05:43:38.751Z"
+    },
+    {
+      "id": "jw-002",
+      "tenant_id": "shri-hari-pack",
+      "name": "Krishna Polymer Processors",
+      "contact_person": "Vikram Patel",
+      "phone": "+91 98250 12345",
+      "email": "vikram@krishnapolymers.com",
+      "address": "Shed 12, Sachin GIDC, Surat",
+      "is_active": true,
+      "created_at": "2026-10-25T05:43:38.752Z"
+    },
+    {
+      "id": "jw-1792907609714",
+      "tenant_id": "0f866809-06c3-4771-8b93-4f2253c9b6b1",
+      "name": "Ayush Job Work",
+      "contact_person": "Ayush",
+      "phone": "56435125653",
+      "email": "ayusn@yop.com",
+      "address": "Test Address",
+      "is_active": true,
+      "created_at": "2026-10-25T05:53:29.714Z"
+    }
+  ],
+  "jobWorkMaterialOutward": [],
+  "jobWorkOrders": [
+    {
+      "id": "jword-1792908813019",
+      "tenant_id": "0f866809-06c3-4771-8b93-4f2253c9b6b1",
+      "order_number": "JWO-202610-946",
+      "vendor_id": "jw-1792907609714",
+      "vendor_name": "Ayush Job Work",
+      "product_id": "85e7089b-bbd3-4bd1-8d3a-c722f78cdb0a",
+      "product_name": "Manufactured Item",
+      "recipe_id": "",
+      "recipe_items": [],
+      "planned_quantity_kg": 500,
+      "received_quantity_kg": 0,
+      "scrap_quantity_kg": 0,
+      "customer_id": null,
+      "customer_name": null,
+      "target_size": "Standard Roll",
+      "target_micron": 50,
+      "status": "in_progress",
+      "expected_delivery_date": null,
+      "notes": "",
+      "created_at": "2026-10-25T06:13:33.019Z"
+    }
+  ],
+  "jobWorkReceipts": []
 }

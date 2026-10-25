@@ -72,8 +72,8 @@ export const createMaterialOutward = async (req: Request, res: Response) => {
     const { vendorId, materialId, sourceBatchId, quantityKg, vehicleNumber, dispatchDate, notes } = req.body;
 
     const qty = Number(quantityKg);
-    if (!vendorId || !materialId || !sourceBatchId || isNaN(qty) || qty <= 0) {
-      return res.status(400).json({ error: 'Vendor, material, warehouse batch, and a positive quantity are required.' });
+    if (!vendorId || !materialId || isNaN(qty) || qty <= 0) {
+      return res.status(400).json({ error: 'Vendor, raw material, and a positive quantity greater than 0 are required.' });
     }
 
     const vendor = (mockStore.jobWorkers || []).find((w) => w.id === vendorId);
@@ -82,15 +82,34 @@ export const createMaterialOutward = async (req: Request, res: Response) => {
     }
 
     const material = (mockStore.materials || inMemMaterials || []).find((m) => m.id === materialId);
-    const sourceBatch = (mockStore.batches || inMemBatches || []).find((b) => b.id === sourceBatchId);
+    if (!material) {
+      return res.status(404).json({ error: 'Selected raw material not found in master catalog' });
+    }
+
+    // Find batch: either specified batch, or auto-pick batch with available stock for this material
+    let sourceBatch = sourceBatchId
+      ? (mockStore.batches || inMemBatches || []).find((b) => b.id === sourceBatchId)
+      : null;
 
     if (!sourceBatch) {
-      return res.status(404).json({ error: 'Selected raw material batch not found in warehouse' });
+      const candidateBatches = (mockStore.batches || inMemBatches || []).filter(
+        (b) => b.material_id === materialId && Number(b.remaining_quantity_kg) > 0
+      );
+      if (candidateBatches.length > 0) {
+        // Prefer batch with sufficient stock, or the first available lot
+        sourceBatch = candidateBatches.find((b) => Number(b.remaining_quantity_kg) >= qty) || candidateBatches[0];
+      }
+    }
+
+    if (!sourceBatch) {
+      return res.status(400).json({
+        error: `No available warehouse stock batch found for ${material.name}. Please receive stock in warehouse first.`,
+      });
     }
 
     if (Number(sourceBatch.remaining_quantity_kg) < qty) {
       return res.status(400).json({
-        error: `Insufficient stock in batch ${sourceBatch.batch_number}. Available: ${sourceBatch.remaining_quantity_kg} kg, Requested: ${qty} kg`,
+        error: `Insufficient stock in lot ${sourceBatch.batch_number}. Available: ${sourceBatch.remaining_quantity_kg} kg, Requested: ${qty} kg`,
       });
     }
 
