@@ -9,12 +9,114 @@ import { inMemFGBatches, InMemFGBatch } from './finishedGoods.controller';
 const getTenantId = (req: Request): string =>
   (req.tenantId || process.env.DEFAULT_TENANT_SLUG || 'shri-hari-pack') as string;
 
+// Helper: Find material across Supabase and inMem
+async function findMaterial(materialId: string, tenantId: string) {
+  if (isSupabaseConfigured && supabase) {
+    try {
+      const { data, error } = await supabase
+        .from('materials')
+        .select('*')
+        .eq('id', materialId)
+        .maybeSingle();
+      if (data && !error) return data;
+    } catch (err) {
+      console.warn('Supabase material query fallback:', err);
+    }
+  }
+  return (mockStore.materials || inMemMaterials || []).find((m) => m.id === materialId);
+}
+
+// Helper: Find batch across Supabase and inMem
+async function findBatch(batchId: string, tenantId: string) {
+  if (isSupabaseConfigured && supabase) {
+    try {
+      const { data, error } = await supabase
+        .from('material_batches')
+        .select('*')
+        .eq('id', batchId)
+        .maybeSingle();
+      if (data && !error) return data;
+    } catch (err) {
+      console.warn('Supabase batch query fallback:', err);
+    }
+  }
+  return (mockStore.batches || inMemBatches || []).find((b) => b.id === batchId);
+}
+
+// Helper: Find available batches for a material with positive remaining quantity
+async function findAvailableBatchesForMaterial(materialId: string, tenantId: string) {
+  if (isSupabaseConfigured && supabase) {
+    try {
+      const { data, error } = await supabase
+        .from('material_batches')
+        .select('*')
+        .eq('material_id', materialId)
+        .gt('remaining_quantity_kg', 0)
+        .order('created_at', { ascending: true });
+      if (data && !error && data.length > 0) return data;
+    } catch (err) {
+      console.warn('Supabase available batches fallback:', err);
+    }
+  }
+  return (mockStore.batches || inMemBatches || []).filter(
+    (b) => b.material_id === materialId && Number(b.remaining_quantity_kg) > 0
+  );
+}
+
+// Helper: Find product across Supabase and inMem
+async function findProduct(productId: string, tenantId: string) {
+  if (isSupabaseConfigured && supabase) {
+    try {
+      const { data, error } = await supabase
+        .from('products')
+        .select(`
+          *,
+          product_recipes (
+            id,
+            name,
+            version,
+            is_default,
+            product_recipe_items (
+              id,
+              material_id,
+              percentage,
+              materials (id, name, code)
+            )
+          )
+        `)
+        .eq('id', productId)
+        .maybeSingle();
+      if (data && !error) return data;
+    } catch (err) {
+      console.warn('Supabase product query fallback:', err);
+    }
+  }
+  return (mockStore.products || inMemProducts || []).find((p) => p.id === productId);
+}
+
+// Helper: Find customer across Supabase and inMem
+async function findCustomer(customerId: string, tenantId: string) {
+  if (isSupabaseConfigured && supabase) {
+    try {
+      const { data, error } = await supabase
+        .from('customers')
+        .select('*')
+        .eq('id', customerId)
+        .maybeSingle();
+      if (data && !error) return data;
+    } catch (err) {
+      console.warn('Supabase customer query fallback:', err);
+    }
+  }
+  return (mockStore.customers || inMemCustomers || []).find((c) => c.id === customerId);
+}
+
 // 1. GET & CREATE Job Workers (Vendors/Processors)
 export const getJobWorkers = async (req: Request, res: Response) => {
   try {
     const tenantId = getTenantId(req);
     const workers = (mockStore.jobWorkers || []).filter(
-      (w) => !w.tenant_id || w.tenant_id === tenantId
+      (w) => !w.tenant_id || w.tenant_id === tenantId || w.tenant_id === 'shri-hari-pack'
     );
     res.json({ success: true, workers });
   } catch (err: any) {
@@ -43,6 +145,7 @@ export const createJobWorker = async (req: Request, res: Response) => {
       created_at: new Date().toISOString(),
     };
 
+    if (!mockStore.jobWorkers) mockStore.jobWorkers = [];
     mockStore.jobWorkers.push(newWorker);
     recordAuditLog('CREATE_JOB_WORKER', `Created job worker: ${newWorker.name}`, newWorker, req.user?.email);
     saveMockStore();
@@ -58,7 +161,7 @@ export const getMaterialOutward = async (req: Request, res: Response) => {
   try {
     const tenantId = getTenantId(req);
     const outward = (mockStore.jobWorkMaterialOutward || []).filter(
-      (o) => !o.tenant_id || o.tenant_id === tenantId
+      (o) => !o.tenant_id || o.tenant_id === tenantId || o.tenant_id === 'shri-hari-pack'
     );
     res.json({ success: true, outward });
   } catch (err: any) {
@@ -81,23 +184,20 @@ export const createMaterialOutward = async (req: Request, res: Response) => {
       return res.status(404).json({ error: 'Job worker vendor not found' });
     }
 
-    const material = (mockStore.materials || inMemMaterials || []).find((m) => m.id === materialId);
+    // Resolve material across Supabase and inMem
+    const material = await findMaterial(materialId, tenantId);
     if (!material) {
       return res.status(404).json({ error: 'Selected raw material not found in master catalog' });
     }
 
-    // Find batch: either specified batch, or auto-pick batch with available stock for this material
-    let sourceBatch = sourceBatchId
-      ? (mockStore.batches || inMemBatches || []).find((b) => b.id === sourceBatchId)
-      : null;
-
-    if (!sourceBatch) {
-      const candidateBatches = (mockStore.batches || inMemBatches || []).filter(
-        (b) => b.material_id === materialId && Number(b.remaining_quantity_kg) > 0
-      );
-      if (candidateBatches.length > 0) {
-        // Prefer batch with sufficient stock, or the first available lot
-        sourceBatch = candidateBatches.find((b) => Number(b.remaining_quantity_kg) >= qty) || candidateBatches[0];
+    // Resolve source batch across Supabase and inMem
+    let sourceBatch: any = null;
+    if (sourceBatchId) {
+      sourceBatch = await findBatch(sourceBatchId, tenantId);
+    } else {
+      const candidates = await findAvailableBatchesForMaterial(materialId, tenantId);
+      if (candidates && candidates.length > 0) {
+        sourceBatch = candidates.find((b: any) => Number(b.remaining_quantity_kg) >= qty) || candidates[0];
       }
     }
 
@@ -107,20 +207,43 @@ export const createMaterialOutward = async (req: Request, res: Response) => {
       });
     }
 
-    if (Number(sourceBatch.remaining_quantity_kg) < qty) {
+    const currentRemaining = Number(sourceBatch.remaining_quantity_kg) || 0;
+    if (currentRemaining < qty) {
       return res.status(400).json({
-        error: `Insufficient stock in lot ${sourceBatch.batch_number}. Available: ${sourceBatch.remaining_quantity_kg} kg, Requested: ${qty} kg`,
+        error: `Insufficient stock in lot ${sourceBatch.batch_number}. Available: ${currentRemaining} kg, Requested: ${qty} kg`,
       });
     }
 
-    // Deduct stock from warehouse batch
-    sourceBatch.remaining_quantity_kg = Number((Number(sourceBatch.remaining_quantity_kg) - qty).toFixed(2));
-    if (sourceBatch.remaining_quantity_kg <= 0) {
-      sourceBatch.remaining_quantity_kg = 0;
-      sourceBatch.status = 'depleted';
+    const newRemaining = Number(Math.max(0, currentRemaining - qty).toFixed(2));
+    const newStatus = newRemaining <= 0 ? 'depleted' : 'available';
+
+    // 1. Deduct stock from Supabase database table if configured
+    if (isSupabaseConfigured && supabase) {
+      try {
+        const { error: updateErr } = await supabase
+          .from('material_batches')
+          .update({
+            remaining_quantity_kg: newRemaining,
+            status: newStatus,
+          })
+          .eq('id', sourceBatch.id);
+
+        if (updateErr) {
+          console.error('Supabase batch stock update error:', updateErr);
+        }
+      } catch (dbErr) {
+        console.error('Failed to update Supabase batch stock:', dbErr);
+      }
     }
 
-    // Create Outward Challan
+    // 2. Also deduct stock in local inMem / mockStore
+    const inMemB = (mockStore.batches || inMemBatches || []).find((b) => b.id === sourceBatch.id);
+    if (inMemB) {
+      inMemB.remaining_quantity_kg = newRemaining;
+      inMemB.status = newStatus;
+    }
+
+    // 3. Create Outward Challan Record
     const challanNumber = `JW-OUT-${new Date().getFullYear()}${String(new Date().getMonth() + 1).padStart(2, '0')}-${Math.floor(100 + Math.random() * 900)}`;
     const outwardRecord = {
       id: `jwo-${Date.now()}`,
@@ -129,7 +252,7 @@ export const createMaterialOutward = async (req: Request, res: Response) => {
       vendor_id: vendor.id,
       vendor_name: vendor.name,
       material_id: materialId,
-      material_name: material?.name || 'Raw Material',
+      material_name: material.name || 'Raw Material',
       source_batch_id: sourceBatch.id,
       source_batch_number: sourceBatch.batch_number,
       quantity_kg: qty,
@@ -139,10 +262,12 @@ export const createMaterialOutward = async (req: Request, res: Response) => {
       created_at: new Date().toISOString(),
     };
 
+    if (!mockStore.jobWorkMaterialOutward) mockStore.jobWorkMaterialOutward = [];
     mockStore.jobWorkMaterialOutward.unshift(outwardRecord);
+
     recordAuditLog(
       'JOB_WORK_OUTWARD',
-      `Sent ${qty} kg of ${material?.name || 'Material'} to Job Worker ${vendor.name} via ${challanNumber}`,
+      `Sent ${qty} kg of ${material.name} to Job Worker ${vendor.name} via ${challanNumber}`,
       outwardRecord,
       req.user?.email
     );
@@ -150,6 +275,7 @@ export const createMaterialOutward = async (req: Request, res: Response) => {
 
     res.status(201).json({ success: true, outward: outwardRecord });
   } catch (err: any) {
+    console.error('Error in createMaterialOutward:', err);
     res.status(500).json({ error: 'Failed to record outward material dispatch', message: err.message });
   }
 };
@@ -158,22 +284,25 @@ export const createMaterialOutward = async (req: Request, res: Response) => {
 export const getVendorStockBalances = async (req: Request, res: Response) => {
   try {
     const tenantId = getTenantId(req);
+
     const workers = (mockStore.jobWorkers || []).filter(
-      (w) => !w.tenant_id || w.tenant_id === tenantId
+      (w) => !w.tenant_id || w.tenant_id === tenantId || w.tenant_id === 'shri-hari-pack'
     );
-    const outward = (mockStore.jobWorkMaterialOutward || []).filter(
-      (o) => !o.tenant_id || o.tenant_id === tenantId
+    const outwardList = (mockStore.jobWorkMaterialOutward || []).filter(
+      (o) => !o.tenant_id || o.tenant_id === tenantId || o.tenant_id === 'shri-hari-pack'
     );
-    const receipts = (mockStore.jobWorkReceipts || []).filter(
-      (r) => !r.tenant_id || r.tenant_id === tenantId
+    const receiptsList = (mockStore.jobWorkReceipts || []).filter(
+      (r) => !r.tenant_id || r.tenant_id === tenantId || r.tenant_id === 'shri-hari-pack'
     );
 
-    // Build map of vendor -> material -> { totalSent, totalConsumed, balance }
     const vendorBalances = workers.map((worker) => {
-      const vendorOutward = outward.filter((o) => o.vendor_id === worker.id);
-      const vendorReceipts = receipts.filter((r) => r.vendor_id === worker.id);
+      const vendorOutward = outwardList.filter((o) => o.vendor_id === worker.id);
+      const vendorReceipts = receiptsList.filter((r) => r.vendor_id === worker.id);
 
-      const materialMap: Record<string, { material_id: string; material_name: string; sent_kg: number; consumed_kg: number; balance_kg: number }> = {};
+      const materialMap: Record<
+        string,
+        { material_id: string; material_name: string; sent_kg: number; consumed_kg: number; balance_kg: number }
+      > = {};
 
       vendorOutward.forEach((o) => {
         if (!materialMap[o.material_id]) {
@@ -209,7 +338,7 @@ export const getVendorStockBalances = async (req: Request, res: Response) => {
         ...m,
         sent_kg: Number(m.sent_kg.toFixed(2)),
         consumed_kg: Number(m.consumed_kg.toFixed(2)),
-        balance_kg: Number((m.sent_kg - m.consumed_kg).toFixed(2)),
+        balance_kg: Number(Math.max(0, m.sent_kg - m.consumed_kg).toFixed(2)),
       }));
 
       const totalBalanceKg = materialsHeld.reduce((sum, m) => sum + Math.max(0, m.balance_kg), 0);
@@ -236,7 +365,7 @@ export const getJobWorkOrders = async (req: Request, res: Response) => {
   try {
     const tenantId = getTenantId(req);
     const orders = (mockStore.jobWorkOrders || []).filter(
-      (o) => !o.tenant_id || o.tenant_id === tenantId
+      (o) => !o.tenant_id || o.tenant_id === tenantId || o.tenant_id === 'shri-hari-pack'
     );
     res.json({ success: true, orders });
   } catch (err: any) {
@@ -256,6 +385,7 @@ export const createJobWorkOrder = async (req: Request, res: Response) => {
       targetSize,
       targetMicron,
       expectedDeliveryDate,
+      instructions,
       notes,
     } = req.body;
 
@@ -269,14 +399,23 @@ export const createJobWorkOrder = async (req: Request, res: Response) => {
       return res.status(404).json({ error: 'Job worker vendor not found' });
     }
 
-    const product = (mockStore.products || inMemProducts || []).find((p) => p.id === productId);
-    const recipe =
-      product?.product_recipes?.find((r: any) => r.id === recipeId) ||
-      product?.product_recipes?.[0];
+    // Resolve product across Supabase and inMem
+    const product = await findProduct(productId, tenantId);
+    if (!product) {
+      return res.status(404).json({ error: 'Selected product not found in catalog' });
+    }
 
-    const customer = customerId
-      ? (mockStore.customers || inMemCustomers || []).find((c) => c.id === customerId)
-      : null;
+    const recipesList = product?.product_recipes || product?.recipes || [];
+    const recipe =
+      recipesList.find((r: any) => r.id === recipeId) ||
+      recipesList.find((r: any) => r.is_default) ||
+      recipesList[0];
+
+    // Resolve customer if passed
+    let customer: any = null;
+    if (customerId) {
+      customer = await findCustomer(customerId, tenantId);
+    }
 
     const orderNumber = `JWO-${new Date().getFullYear()}${String(new Date().getMonth() + 1).padStart(2, '0')}-${Math.floor(100 + Math.random() * 900)}`;
 
@@ -289,7 +428,8 @@ export const createJobWorkOrder = async (req: Request, res: Response) => {
       product_id: productId,
       product_name: product?.name || 'Manufactured Item',
       recipe_id: recipe?.id || '',
-      recipe_items: recipe?.recipe_items || [],
+      recipe_name: recipe?.name || 'Default Formulation',
+      recipe_items: recipe?.product_recipe_items || recipe?.recipe_items || [],
       planned_quantity_kg: plannedKg,
       received_quantity_kg: 0,
       scrap_quantity_kg: 0,
@@ -299,11 +439,14 @@ export const createJobWorkOrder = async (req: Request, res: Response) => {
       target_micron: targetMicron || 50,
       status: 'in_progress' as const,
       expected_delivery_date: expectedDeliveryDate || null,
-      notes: notes?.trim() || '',
+      instructions: instructions || notes?.trim() || '',
       created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
     };
 
+    if (!mockStore.jobWorkOrders) mockStore.jobWorkOrders = [];
     mockStore.jobWorkOrders.unshift(newOrder);
+
     recordAuditLog(
       'CREATE_JOB_WORK_ORDER',
       `Issued Job Work Order ${orderNumber} to ${vendor.name} for ${plannedKg} kg of ${product?.name}`,
@@ -314,6 +457,7 @@ export const createJobWorkOrder = async (req: Request, res: Response) => {
 
     res.status(201).json({ success: true, order: newOrder });
   } catch (err: any) {
+    console.error('Error in createJobWorkOrder:', err);
     res.status(500).json({ error: 'Failed to create job work order', message: err.message });
   }
 };
@@ -322,21 +466,17 @@ export const createJobWorkOrder = async (req: Request, res: Response) => {
 export const receiveJobWorkFinishedGoods = async (req: Request, res: Response) => {
   try {
     const tenantId = getTenantId(req);
-    const {
-      orderId,
-      acceptedQuantityKg,
-      scrapQuantityKg,
-      deliveryDestination, // 'factory_stock' | 'direct_customer'
-      vehicleNumber,
-      deliveryDate,
-      notes,
-    } = req.body;
-
-    const acceptedKg = Number(acceptedQuantityKg);
-    const scrapKg = Number(scrapQuantityKg) || 0;
+    const orderId = req.body.jobWorkOrderId || req.body.orderId;
+    const acceptedKg = Number(req.body.acceptedQuantityKg);
+    const scrapKg = Number(req.body.scrapQuantityKg) || 0;
+    const deliveryDestination = req.body.deliveryDestination || 'factory_stock';
+    const customerId = req.body.customerId;
+    const vehicleNumber = req.body.vehicleNumber;
+    const deliveryDate = req.body.deliveryDate;
+    const notes = req.body.notes;
 
     if (!orderId || isNaN(acceptedKg) || acceptedKg <= 0) {
-      return res.status(400).json({ error: 'Order ID and positive accepted quantity are required.' });
+      return res.status(400).json({ error: 'Job work order ID and positive accepted quantity are required.' });
     }
 
     const order = (mockStore.jobWorkOrders || []).find((o) => o.id === orderId);
@@ -345,24 +485,43 @@ export const receiveJobWorkFinishedGoods = async (req: Request, res: Response) =
     }
 
     const vendor = (mockStore.jobWorkers || []).find((w) => w.id === order.vendor_id);
-    const product = (mockStore.products || inMemProducts || []).find((p) => p.id === order.product_id);
     const totalInputConsumed = acceptedKg + scrapKg;
 
-    // Calculate raw materials consumed from vendor based on recipe
-    const recipeItems = order.recipe_items || product?.product_recipes?.[0]?.recipe_items || [];
+    // Resolve recipe formulation items for raw materials consumed deduction
+    let recipeItems: any[] = [];
+    if (order.recipe_id && isSupabaseConfigured && supabase) {
+      try {
+        const { data: rItems } = await supabase
+          .from('product_recipe_items')
+          .select('*, materials(name)')
+          .eq('recipe_id', order.recipe_id);
+        if (rItems && rItems.length > 0) {
+          recipeItems = rItems.map((it: any) => ({
+            material_id: it.material_id,
+            material_name: it.materials?.name || 'Raw Material',
+            percentage: Number(it.percentage) || 0,
+          }));
+        }
+      } catch (err) {
+        console.warn('Recipe query fallback:', err);
+      }
+    }
+
+    if (recipeItems.length === 0 && Array.isArray(order.recipe_items) && order.recipe_items.length > 0) {
+      recipeItems = order.recipe_items;
+    }
+
     const materialsConsumed = recipeItems.map((item: any) => {
-      const mat = (mockStore.materials || inMemMaterials || []).find((m) => m.id === item.material_id);
       const ratio = Number(item.percentage) || 100;
       const consumedKg = Number(((ratio / 100) * totalInputConsumed).toFixed(2));
       return {
         material_id: item.material_id,
-        material_name: mat?.name || item.material_name || 'Material',
+        material_name: item.material_name || item.materials?.name || 'Polymer',
         percentage: ratio,
         consumed_kg: consumedKg,
       };
     });
 
-    // If no recipe configured, treat as generic material consumption
     if (materialsConsumed.length === 0) {
       materialsConsumed.push({
         material_id: 'gen-poly',
@@ -378,8 +537,54 @@ export const receiveJobWorkFinishedGoods = async (req: Request, res: Response) =
     let fgBatchId = '';
     if (deliveryDestination !== 'direct_customer') {
       const lotNumber = `FG-JW-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}-${Math.floor(100 + Math.random() * 900)}`;
+
+      if (isSupabaseConfigured && supabase) {
+        try {
+          const pbBatchNumber = `PB-JW-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}-${Math.floor(100 + Math.random() * 900)}`;
+          const { data: pbData, error: pbErr } = await supabase
+            .from('production_batches')
+            .insert({
+              tenant_id: tenantId,
+              batch_number: pbBatchNumber,
+              product_id: order.product_id,
+              operator_name: `${vendor?.name || 'Job Worker'} (Outsourced)`,
+              status: 'completed',
+              total_input_kg: totalInputConsumed,
+              accepted_output_kg: acceptedKg,
+              waste_kg: scrapKg,
+              start_time: new Date().toISOString(),
+              completion_time: new Date().toISOString(),
+            })
+            .select()
+            .maybeSingle();
+
+          if (pbData && !pbErr) {
+            const { data: fgData } = await supabase
+              .from('finished_goods_batches')
+              .insert({
+                tenant_id: tenantId,
+                production_batch_id: pbData.id,
+                product_id: order.product_id,
+                batch_number: lotNumber,
+                quantity_produced_kg: acceptedKg,
+                quantity_on_hand_kg: acceptedKg,
+                quantity_reserved_kg: 0,
+                quantity_dispatched_kg: 0,
+                status: 'in_stock',
+                created_at: new Date().toISOString(),
+              })
+              .select()
+              .maybeSingle();
+
+            if (fgData) fgBatchId = fgData.id;
+          }
+        } catch (dbErr) {
+          console.error('Failed to record FG batch in Supabase:', dbErr);
+        }
+      }
+
       const newFGBatch: InMemFGBatch = {
-        id: `fg-${Date.now()}`,
+        id: fgBatchId || `fg-${Date.now()}`,
         tenant_id: tenantId,
         production_batch_id: order.id,
         product_id: order.product_id,
@@ -394,23 +599,55 @@ export const receiveJobWorkFinishedGoods = async (req: Request, res: Response) =
       if (!mockStore.fgBatches) mockStore.fgBatches = [];
       mockStore.fgBatches.unshift(newFGBatch);
       inMemFGBatches.unshift(newFGBatch);
-      fgBatchId = newFGBatch.id;
+      if (!fgBatchId) fgBatchId = newFGBatch.id;
     }
 
     // B. Route Directly to Customer (Auto-Dispatch Note)
     let deliveryId = '';
-    if (deliveryDestination === 'direct_customer' && order.customer_id) {
-      const customer = (mockStore.customers || inMemCustomers || []).find((c) => c.id === order.customer_id);
+    const destCustId = customerId || order.customer_id;
+    if (deliveryDestination === 'direct_customer' && destCustId) {
+      const customer = await findCustomer(destCustId, tenantId);
       const deliveryDoc = `DEL-JW-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}-${Math.floor(100 + Math.random() * 900)}`;
+
+      if (isSupabaseConfigured && supabase) {
+        try {
+          const { data: delData } = await supabase
+            .from('deliveries')
+            .insert({
+              tenant_id: tenantId,
+              delivery_number: deliveryDoc,
+              customer_id: destCustId,
+              dispatch_date: deliveryDate || new Date().toISOString(),
+              destination_address: customer?.delivery_address || customer?.address || customer?.city || 'Customer Plant',
+              vehicle_number: vehicleNumber?.trim() || 'Direct Dispatch',
+              status: 'delivered',
+              created_at: new Date().toISOString(),
+            })
+            .select()
+            .maybeSingle();
+
+          if (delData) {
+            deliveryId = delData.id;
+            await supabase.from('delivery_items').insert({
+              delivery_id: delData.id,
+              product_id: order.product_id,
+              quantity_kg: acceptedKg,
+            });
+          }
+        } catch (delErr) {
+          console.error('Failed to create delivery in Supabase:', delErr);
+        }
+      }
+
       const newDelivery = {
-        id: `del-${Date.now()}`,
+        id: deliveryId || `del-${Date.now()}`,
         tenant_id: tenantId,
         delivery_number: deliveryDoc,
         order_id: null,
-        customer_id: order.customer_id,
+        customer_id: destCustId,
         customer_name: customer?.name || order.customer_name,
-        destination_address: customer?.delivery_address || 'Customer Plant',
-        vehicle_number: vehicleNumber?.trim() || 'Third-Party Logistics',
+        destination_address: customer?.delivery_address || customer?.address || customer?.city || 'Customer Plant',
+        vehicle_number: vehicleNumber?.trim() || 'Direct Dispatch',
         dispatch_date: deliveryDate || new Date().toISOString(),
         delivery_items: [
           {
@@ -426,7 +663,7 @@ export const receiveJobWorkFinishedGoods = async (req: Request, res: Response) =
 
       if (!mockStore.deliveries) mockStore.deliveries = [];
       mockStore.deliveries.unshift(newDelivery);
-      deliveryId = newDelivery.id;
+      if (!deliveryId) deliveryId = newDelivery.id;
     }
 
     // Record Inward Receipt
@@ -445,8 +682,8 @@ export const receiveJobWorkFinishedGoods = async (req: Request, res: Response) =
       total_input_consumed_kg: totalInputConsumed,
       materials_consumed: materialsConsumed,
       delivery_destination: deliveryDestination || 'factory_stock',
-      customer_id: order.customer_id,
-      customer_name: order.customer_name,
+      customer_id: destCustId || null,
+      customer_name: order.customer_name || null,
       fg_batch_id: fgBatchId,
       delivery_id: deliveryId,
       vehicle_number: vehicleNumber?.trim() || '',
@@ -458,16 +695,19 @@ export const receiveJobWorkFinishedGoods = async (req: Request, res: Response) =
     if (!mockStore.jobWorkReceipts) mockStore.jobWorkReceipts = [];
     mockStore.jobWorkReceipts.unshift(receiptRecord);
 
-    // Update Job Work Order Progress
+    // Update Order progress
     order.received_quantity_kg = Number(((order.received_quantity_kg || 0) + acceptedKg).toFixed(2));
     order.scrap_quantity_kg = Number(((order.scrap_quantity_kg || 0) + scrapKg).toFixed(2));
     if (order.received_quantity_kg >= order.planned_quantity_kg) {
       order.status = 'completed';
+    } else {
+      order.status = 'in_progress';
     }
+    order.updated_at = new Date().toISOString();
 
     recordAuditLog(
       'JOB_WORK_RECEIPT',
-      `Received ${acceptedKg} kg of ${order.product_name} from Job Worker ${order.vendor_name} (${deliveryDestination === 'direct_customer' ? 'Direct to Customer' : 'Stocked in Warehouse'})`,
+      `Received ${acceptedKg} kg for Job Work Order ${order.order_number} from ${vendor?.name}`,
       receiptRecord,
       req.user?.email
     );
@@ -475,19 +715,19 @@ export const receiveJobWorkFinishedGoods = async (req: Request, res: Response) =
 
     res.status(201).json({ success: true, receipt: receiptRecord, order });
   } catch (err: any) {
-    res.status(500).json({ error: 'Failed to process job work goods receipt', message: err.message });
+    console.error('Error in receiveJobWorkFinishedGoods:', err);
+    res.status(500).json({ error: 'Failed to record inward receipt', message: err.message });
   }
 };
 
-// 6. Get Receipts History
 export const getJobWorkReceipts = async (req: Request, res: Response) => {
   try {
     const tenantId = getTenantId(req);
     const receipts = (mockStore.jobWorkReceipts || []).filter(
-      (r) => !r.tenant_id || r.tenant_id === tenantId
+      (r) => !r.tenant_id || r.tenant_id === tenantId || r.tenant_id === 'shri-hari-pack'
     );
     res.json({ success: true, receipts });
   } catch (err: any) {
-    res.status(500).json({ error: 'Failed to fetch receipts history', message: err.message });
+    res.status(500).json({ error: 'Failed to fetch job work receipts', message: err.message });
   }
 };

@@ -9,6 +9,52 @@
   "deliveries": [],
   "auditLogs": [
     {
+      "id": "aud-1792909842395-237",
+      "action": "JOB_WORK_OUTWARD",
+      "entity_name": "Sent 100 kg of Type B to Job Worker Ayush Job Work via JW-OUT-202610-322",
+      "user_email": "shreeharipp@gmail.com",
+      "details": {
+        "id": "jwo-1792909842395",
+        "tenant_id": "0f866809-06c3-4771-8b93-4f2253c9b6b1",
+        "challan_number": "JW-OUT-202610-322",
+        "vendor_id": "jw-1792907609714",
+        "vendor_name": "Ayush Job Work",
+        "material_id": "52366eee-fb02-40e7-99cb-25f3cb38cec1",
+        "material_name": "Type B",
+        "source_batch_id": "b8101449-cc5b-4bf1-9524-dcfeccfc1fef",
+        "source_batch_number": "MB-20261015-830",
+        "quantity_kg": 100,
+        "dispatch_date": "2026-10-25",
+        "vehicle_number": "",
+        "notes": "",
+        "created_at": "2026-10-25T06:30:42.395Z"
+      },
+      "created_at": "2026-10-25T06:30:42.395Z"
+    },
+    {
+      "id": "aud-1792909736810-832",
+      "action": "JOB_WORK_OUTWARD",
+      "entity_name": "Sent 10 kg of ANTI BLOCK to Job Worker Ayush Job Work via JW-OUT-202610-517",
+      "user_email": "admin@shrihari.com",
+      "details": {
+        "id": "jwo-1792909736809",
+        "tenant_id": "0f866809-06c3-4771-8b93-4f2253c9b6b1",
+        "challan_number": "JW-OUT-202610-517",
+        "vendor_id": "jw-1792907609714",
+        "vendor_name": "Ayush Job Work",
+        "material_id": "1262d1df-8132-4d8f-9b3b-a7a3e2a341de",
+        "material_name": "ANTI BLOCK",
+        "source_batch_id": "310caf00-2842-4ea7-93fc-7fff845da07c",
+        "source_batch_number": "MB-20261019-554",
+        "quantity_kg": 10,
+        "dispatch_date": "2026-10-25",
+        "vehicle_number": "",
+        "notes": "Test dispatch",
+        "created_at": "2026-10-25T06:28:56.809Z"
+      },
+      "created_at": "2026-10-25T06:28:56.810Z"
+    },
+    {
       "id": "aud-1792908813022-858",
       "action": "CREATE_JOB_WORK_ORDER",
       "entity_name": "Issued Job Work Order JWO-202610-946 to Ayush Job Work for 500 kg of undefined",
@@ -195,7 +241,40 @@
       "created_at": "2026-10-25T05:53:29.714Z"
     }
   ],
-  "jobWorkMaterialOutward": [],
+  "jobWorkMaterialOutward": [
+    {
+      "id": "jwo-1792909842395",
+      "tenant_id": "0f866809-06c3-4771-8b93-4f2253c9b6b1",
+      "challan_number": "JW-OUT-202610-322",
+      "vendor_id": "jw-1792907609714",
+      "vendor_name": "Ayush Job Work",
+      "material_id": "52366eee-fb02-40e7-99cb-25f3cb38cec1",
+      "material_name": "Type B",
+      "source_batch_id": "b8101449-cc5b-4bf1-9524-dcfeccfc1fef",
+      "source_batch_number": "MB-20261015-830",
+      "quantity_kg": 100,
+      "dispatch_date": "2026-10-25",
+      "vehicle_number": "",
+      "notes": "",
+      "created_at": "2026-10-25T06:30:42.395Z"
+    },
+    {
+      "id": "jwo-1792909736809",
+      "tenant_id": "0f866809-06c3-4771-8b93-4f2253c9b6b1",
+      "challan_number": "JW-OUT-202610-517",
+      "vendor_id": "jw-1792907609714",
+      "vendor_name": "Ayush Job Work",
+      "material_id": "1262d1df-8132-4d8f-9b3b-a7a3e2a341de",
+      "material_name": "ANTI BLOCK",
+      "source_batch_id": "310caf00-2842-4ea7-93fc-7fff845da07c",
+      "source_batch_number": "MB-20261019-554",
+      "quantity_kg": 10,
+      "dispatch_date": "2026-10-25",
+      "vehicle_number": "",
+      "notes": "Test dispatch",
+      "created_at": "2026-10-25T06:28:56.809Z"
+    }
+  ],
   "jobWorkOrders": [
     {
       "id": "jword-1792908813019",
