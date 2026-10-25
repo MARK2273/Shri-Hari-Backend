@@ -110,6 +110,101 @@
   ],
   "auditLogs": [
     {
+      "id": "aud-1792913119777-843",
+      "action": "CREATE_JOB_WORK_ORDER",
+      "entity_name": "Issued Job Work Order JWO-202610-985 to Krishna Polymer Processors for 15 kg of NATURAL N-F-G",
+      "user_email": "shreeharipp@gmail.com",
+      "details": {
+        "id": "jword-1792913119777",
+        "tenant_id": "0f866809-06c3-4771-8b93-4f2253c9b6b1",
+        "order_number": "JWO-202610-985",
+        "vendor_id": "jw-002",
+        "vendor_name": "Krishna Polymer Processors",
+        "product_id": "3bcf82fa-69da-4f7e-8a96-8a324da21660",
+        "product_name": "NATURAL N-F-G",
+        "recipe_id": "67da5329-3189-4211-8037-7d923131023d",
+        "recipe_name": "Recipe v1",
+        "recipe_items": [
+          {
+            "id": "97be40a9-883f-4570-82ae-2ebc6ed0e31f",
+            "material_id": "55b72df2-369d-4cfc-97a5-dc2de13dedd2",
+            "material_name": "19010",
+            "percentage": 36.58,
+            "planned_kg_per_kg_output": 0.3658
+          },
+          {
+            "id": "ea766101-8b78-4847-aa7f-c5a137f996f2",
+            "material_id": "6e82a09a-0427-4c5f-8f06-905100c4490f",
+            "material_name": "18010",
+            "percentage": 16.63,
+            "planned_kg_per_kg_output": 0.1663
+          },
+          {
+            "id": "46f61200-07c4-4807-8546-3ab272fc139d",
+            "material_id": "7c197b3f-6909-4971-b117-828f1978b31d",
+            "material_name": "HD 46003",
+            "percentage": 6.65,
+            "planned_kg_per_kg_output": 0.0665
+          },
+          {
+            "id": "0ff4ae51-e75d-4fec-b5af-2f3974bd89cd",
+            "material_id": "d596834f-270c-4425-be50-59fc96a281fe",
+            "material_name": "1020",
+            "percentage": 6.65,
+            "planned_kg_per_kg_output": 0.0665
+          },
+          {
+            "id": "04bf8eb6-6e0e-40d2-ab31-0957a841ae7b",
+            "material_id": "7ba1265e-a1ac-4dcf-95c3-7e6fd417a426",
+            "material_name": "1005",
+            "percentage": 3.33,
+            "planned_kg_per_kg_output": 0.0333
+          },
+          {
+            "id": "34b3089c-be55-457c-af6b-6d28cc28a006",
+            "material_id": "b2d057c0-4979-43cf-9820-d73dadbfaa31",
+            "material_name": "METLOCINE  -  SLIP",
+            "percentage": 19.95,
+            "planned_kg_per_kg_output": 0.1995
+          },
+          {
+            "id": "4319d09a-af79-4212-9851-ec62086101fa",
+            "material_id": "99b35c2c-24f9-4a17-b3d2-1417b0cf2d9d",
+            "material_name": "METLOCINE - NON SLIP",
+            "percentage": 9.98,
+            "planned_kg_per_kg_output": 0.0998
+          },
+          {
+            "id": "8e313752-9955-40d6-b665-ffbe6a19abef",
+            "material_id": "d8abb4e5-83aa-43f6-8d1c-0414708bf105",
+            "material_name": "PPA MASTERBATCH",
+            "percentage": 0.1,
+            "planned_kg_per_kg_output": 0.001
+          },
+          {
+            "id": "f150794c-8996-44bb-b690-c720e2f530d9",
+            "material_id": "4974c799-f937-4b5a-99d3-904def9410c5",
+            "material_name": "SLIP AGENT",
+            "percentage": 0.13,
+            "planned_kg_per_kg_output": 0.0013
+          }
+        ],
+        "planned_quantity_kg": 15,
+        "received_quantity_kg": 0,
+        "scrap_quantity_kg": 0,
+        "customer_id": null,
+        "customer_name": null,
+        "target_size": "600",
+        "target_micron": 20,
+        "status": "in_progress",
+        "expected_delivery_date": "2026-10-26",
+        "instructions": "",
+        "created_at": "2026-10-25T07:25:19.777Z",
+        "updated_at": "2026-10-25T07:25:19.777Z"
+      },
+      "created_at": "2026-10-25T07:25:19.777Z"
+    },
+    {
       "id": "aud-1792911431628-699",
       "action": "JOB_WORK_RECEIPT",
       "entity_name": "Received 10 kg for Job Work Order JWO-202610-234 from Ayush Job Work",
@@ -771,6 +866,94 @@
     }
   ],
   "jobWorkOrders": [
+    {
+      "id": "jword-1792913119777",
+      "tenant_id": "0f866809-06c3-4771-8b93-4f2253c9b6b1",
+      "order_number": "JWO-202610-985",
+      "vendor_id": "jw-002",
+      "vendor_name": "Krishna Polymer Processors",
+      "product_id": "3bcf82fa-69da-4f7e-8a96-8a324da21660",
+      "product_name": "NATURAL N-F-G",
+      "recipe_id": "67da5329-3189-4211-8037-7d923131023d",
+      "recipe_name": "Recipe v1",
+      "recipe_items": [
+        {
+          "id": "97be40a9-883f-4570-82ae-2ebc6ed0e31f",
+          "material_id": "55b72df2-369d-4cfc-97a5-dc2de13dedd2",
+          "material_name": "19010",
+          "percentage": 36.58,
+          "planned_kg_per_kg_output": 0.3658
+        },
+        {
+          "id": "ea766101-8b78-4847-aa7f-c5a137f996f2",
+          "material_id": "6e82a09a-0427-4c5f-8f06-905100c4490f",
+          "material_name": "18010",
+          "percentage": 16.63,
+          "planned_kg_per_kg_output": 0.1663
+        },
+        {
+          "id": "46f61200-07c4-4807-8546-3ab272fc139d",
+          "material_id": "7c197b3f-6909-4971-b117-828f1978b31d",
+          "material_name": "HD 46003",
+          "percentage": 6.65,
+          "planned_kg_per_kg_output": 0.0665
+        },
+        {
+          "id": "0ff4ae51-e75d-4fec-b5af-2f3974bd89cd",
+          "material_id": "d596834f-270c-4425-be50-59fc96a281fe",
+          "material_name": "1020",
+          "percentage": 6.65,
+          "planned_kg_per_kg_output": 0.0665
+        },
+        {
+          "id": "04bf8eb6-6e0e-40d2-ab31-0957a841ae7b",
+          "material_id": "7ba1265e-a1ac-4dcf-95c3-7e6fd417a426",
+          "material_name": "1005",
+          "percentage": 3.33,
+          "planned_kg_per_kg_output": 0.0333
+        },
+        {
+          "id": "34b3089c-be55-457c-af6b-6d28cc28a006",
+          "material_id": "b2d057c0-4979-43cf-9820-d73dadbfaa31",
+          "material_name": "METLOCINE  -  SLIP",
+          "percentage": 19.95,
+          "planned_kg_per_kg_output": 0.1995
+        },
+        {
+          "id": "4319d09a-af79-4212-9851-ec62086101fa",
+          "material_id": "99b35c2c-24f9-4a17-b3d2-1417b0cf2d9d",
+          "material_name": "METLOCINE - NON SLIP",
+          "percentage": 9.98,
+          "planned_kg_per_kg_output": 0.0998
+        },
+        {
+          "id": "8e313752-9955-40d6-b665-ffbe6a19abef",
+          "material_id": "d8abb4e5-83aa-43f6-8d1c-0414708bf105",
+          "material_name": "PPA MASTERBATCH",
+          "percentage": 0.1,
+          "planned_kg_per_kg_output": 0.001
+        },
+        {
+          "id": "f150794c-8996-44bb-b690-c720e2f530d9",
+          "material_id": "4974c799-f937-4b5a-99d3-904def9410c5",
+          "material_name": "SLIP AGENT",
+          "percentage": 0.13,
+          "planned_kg_per_kg_output": 0.0013
+        }
+      ],
+      "planned_quantity_kg": 15,
+      "received_quantity_kg": 0,
+      "scrap_quantity_kg": 0,
+      "customer_id": null,
+      "customer_name": null,
+      "target_size": "600",
+      "target_micron": 20,
+      "status": "in_progress",
+      "expected_delivery_date": "2026-10-26",
+      "instructions": "",
+      "created_at": "2026-10-25T07:25:19.777Z",
+      "updated_at": "2026-10-25T07:25:19.777Z"
+    },
     {
       "id": "jword-1792910482758",
       "tenant_id": "0f866809-06c3-4771-8b93-4f2253c9b6b1",

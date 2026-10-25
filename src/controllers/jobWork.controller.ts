@@ -628,6 +628,10 @@ export const receiveJobWorkFinishedGoods = async (req: Request, res: Response) =
       const lotNumber = `FG-JW-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}-${Math.floor(100 + Math.random() * 900)}`;
       const vendorName = vendor?.name || order.vendor_name || 'Job Worker';
       const operatorLabel = `Job Work: ${vendorName}`;
+      const sizeMicronLabel =
+        order.target_size && order.target_micron
+          ? `${order.target_size} - ${order.target_micron} Micron`
+          : order.target_size || (order.target_micron ? `${order.target_micron} Micron` : null);
 
       let pbId = order.id;
 
@@ -642,6 +646,7 @@ export const receiveJobWorkFinishedGoods = async (req: Request, res: Response) =
               product_id: order.product_id,
               recipe_id: order.recipe_id || null,
               operator_name: operatorLabel,
+              size_micron: sizeMicronLabel,
               planned_quantity_kg: Number(order.planned_quantity_kg) || acceptedKg,
               actual_input_kg: totalInputConsumed,
               accepted_output_kg: acceptedKg,
@@ -663,6 +668,7 @@ export const receiveJobWorkFinishedGoods = async (req: Request, res: Response) =
                 production_batch_id: pbData.id,
                 product_id: order.product_id,
                 batch_number: lotNumber,
+                size_micron: sizeMicronLabel,
                 quantity_produced_kg: acceptedKg,
                 quantity_on_hand_kg: acceptedKg,
                 quantity_reserved_kg: 0,
@@ -690,6 +696,7 @@ export const receiveJobWorkFinishedGoods = async (req: Request, res: Response) =
         production_batch_id: pbId,
         product_id: order.product_id,
         batch_number: lotNumber,
+        size_micron: sizeMicronLabel,
         operator_name: operatorLabel,
         quantity_produced_kg: acceptedKg,
         quantity_on_hand_kg: acceptedKg,
