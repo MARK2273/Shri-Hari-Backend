@@ -122,13 +122,15 @@ export const getFinishedGoodsInventory = async (req: Request, res: Response) => 
 
       const summary = Object.values(productMap).map((p: any) => ({
         ...p,
-        specs: Object.values(p.specs_breakdown),
+        specs: Object.values(p.specs_breakdown).filter((s: any) => Number(s.available_kg || s.on_hand_kg || 0) > 0),
       }));
 
-      const sizeMicronSummary = Object.values(sizeMicronMap).map((s: any) => ({
-        ...s,
-        products: Object.values(s.products),
-      }));
+      const sizeMicronSummary = Object.values(sizeMicronMap)
+        .filter((s: any) => Number(s.available_kg || s.total_on_hand_kg || 0) > 0)
+        .map((s: any) => ({
+          ...s,
+          products: Object.values(s.products).filter((prod: any) => Number(prod.available_kg || 0) > 0),
+        }));
 
       return res.json({
         success: true,
@@ -237,13 +239,15 @@ export const getFinishedGoodsInventory = async (req: Request, res: Response) => 
 
     const summary = Object.values(productMap).map((p: any) => ({
       ...p,
-      specs: Object.values(p.specs_breakdown),
+      specs: Object.values(p.specs_breakdown).filter((s: any) => Number(s.available_kg || s.on_hand_kg || 0) > 0),
     }));
 
-    const sizeMicronSummary = Object.values(sizeMicronMap).map((s: any) => ({
-      ...s,
-      products: Object.values(s.products),
-    }));
+    const sizeMicronSummary = Object.values(sizeMicronMap)
+      .filter((s: any) => Number(s.available_kg || s.total_on_hand_kg || 0) > 0)
+      .map((s: any) => ({
+        ...s,
+        products: Object.values(s.products).filter((prod: any) => Number(prod.available_kg || 0) > 0),
+      }));
 
     return res.json({
       success: true,
