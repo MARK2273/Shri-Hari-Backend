@@ -59,7 +59,7 @@ export const getDeliveries = async (req: Request, res: Response) => {
           products (id, code, name, unit),
           delivery_batch_allocations (
             id, allocated_quantity_kg,
-            finished_goods_batches (id, batch_number)
+            finished_goods_batches (id, batch_number, size_micron)
           )
         )
       `)
