@@ -157,18 +157,25 @@ export const getOrders = async (req: Request, res: Response) => {
           };
         });
 
-        const finalSellingPrice = orderSellingPrice || enrichedItems[0]?.selling_price_per_kg || 0;
-        const finalRecipeCost = orderRecipeCost || enrichedItems[0]?.recipe_cost_per_kg || 0;
-        const totalWeight = Number(o.total_requested_weight_kg || 0);
+        const totalOrderValue = enrichedItems.reduce((sum: number, it: any) => {
+          return sum + (Number(it.requested_quantity_kg || 0) * Number(it.selling_price_per_kg || 0));
+        }, 0);
+        const totalEstimatedCost = enrichedItems.reduce((sum: number, it: any) => {
+          return sum + (Number(it.requested_quantity_kg || 0) * Number(it.recipe_cost_per_kg || 0));
+        }, 0);
+        const totalWeight = enrichedItems.reduce((sum: number, it: any) => sum + Number(it.requested_quantity_kg || 0), 0) || Number(o.total_requested_weight_kg || 0);
+        const finalSellingPrice = orderSellingPrice || (totalWeight > 0 ? totalOrderValue / totalWeight : 0) || enrichedItems[0]?.selling_price_per_kg || 0;
+        const finalRecipeCost = orderRecipeCost || (totalWeight > 0 ? totalEstimatedCost / totalWeight : 0) || enrichedItems[0]?.recipe_cost_per_kg || 0;
 
         return {
           ...o,
-          grade: o.grade || parsedOrder.grade,
-          size_micron: o.size_micron || parsedOrder.sizeMicron,
-          selling_price_per_kg: finalSellingPrice,
-          recipe_cost_per_kg: finalRecipeCost,
-          total_order_value: Number((finalSellingPrice * totalWeight).toFixed(2)),
-          total_estimated_cost: Number((finalRecipeCost * totalWeight).toFixed(2)),
+          grade: o.grade || parsedOrder.grade || enrichedItems[0]?.grade,
+          size_micron: o.size_micron || parsedOrder.sizeMicron || enrichedItems[0]?.size_micron,
+          selling_price_per_kg: Number(finalSellingPrice.toFixed(2)),
+          recipe_cost_per_kg: Number(finalRecipeCost.toFixed(2)),
+          total_order_value: Number(totalOrderValue.toFixed(2)),
+          total_estimated_cost: Number(totalEstimatedCost.toFixed(2)),
+          total_requested_weight_kg: totalWeight,
           notes: parsedOrder.notes || o.notes,
           customers: cust
             ? {
@@ -193,7 +200,7 @@ export const getOrders = async (req: Request, res: Response) => {
         customers (id, code, name, contact_person, phone, delivery_address),
         customer_order_items (
           id, product_id, requested_quantity_kg, planned_quantity_kg,
-          produced_quantity_kg, dispatched_quantity_kg, status, notes,
+          produced_quantity_kg, dispatched_quantity_kg, status, notes, size_micron, grade,
           products (id, code, name, unit)
         )
       `)
@@ -213,26 +220,33 @@ export const getOrders = async (req: Request, res: Response) => {
         const itemRecipeCost = parsedItem.recipeCostPerKg || orderRecipeCost || 0;
         return {
           ...it,
-          grade: parsedItem.grade || parsedOrder.grade,
-          size_micron: parsedItem.sizeMicron || parsedOrder.sizeMicron,
+          grade: it.grade || parsedItem.grade || parsedOrder.grade,
+          size_micron: it.size_micron || parsedItem.sizeMicron || parsedOrder.sizeMicron,
           selling_price_per_kg: itemSellingPrice,
           recipe_cost_per_kg: itemRecipeCost,
           notes: parsedItem.notes || it.notes,
         };
       });
 
-      const finalSellingPrice = orderSellingPrice || items[0]?.selling_price_per_kg || 0;
-      const finalRecipeCost = orderRecipeCost || items[0]?.recipe_cost_per_kg || 0;
-      const totalWeight = Number(o.total_requested_weight_kg || 0);
+      const totalOrderValue = items.reduce((sum: number, it: any) => {
+        return sum + (Number(it.requested_quantity_kg || 0) * Number(it.selling_price_per_kg || 0));
+      }, 0);
+      const totalEstimatedCost = items.reduce((sum: number, it: any) => {
+        return sum + (Number(it.requested_quantity_kg || 0) * Number(it.recipe_cost_per_kg || 0));
+      }, 0);
+      const totalWeight = items.reduce((sum: number, it: any) => sum + Number(it.requested_quantity_kg || 0), 0) || Number(o.total_requested_weight_kg || 0);
+      const finalSellingPrice = orderSellingPrice || (totalWeight > 0 ? totalOrderValue / totalWeight : 0) || items[0]?.selling_price_per_kg || 0;
+      const finalRecipeCost = orderRecipeCost || (totalWeight > 0 ? totalEstimatedCost / totalWeight : 0) || items[0]?.recipe_cost_per_kg || 0;
 
       return {
         ...o,
-        grade: parsedOrder.grade,
-        size_micron: parsedOrder.sizeMicron,
-        selling_price_per_kg: finalSellingPrice,
-        recipe_cost_per_kg: finalRecipeCost,
-        total_order_value: Number((finalSellingPrice * totalWeight).toFixed(2)),
-        total_estimated_cost: Number((finalRecipeCost * totalWeight).toFixed(2)),
+        grade: o.grade || parsedOrder.grade || items[0]?.grade,
+        size_micron: o.size_micron || parsedOrder.sizeMicron || items[0]?.size_micron,
+        selling_price_per_kg: Number(finalSellingPrice.toFixed(2)),
+        recipe_cost_per_kg: Number(finalRecipeCost.toFixed(2)),
+        total_order_value: Number(totalOrderValue.toFixed(2)),
+        total_estimated_cost: Number(totalEstimatedCost.toFixed(2)),
+        total_requested_weight_kg: totalWeight,
         notes: parsedOrder.notes || o.notes,
         customer_order_items: items,
       };
@@ -307,6 +321,15 @@ export const createOrder = async (req: Request, res: Response) => {
         };
       });
 
+      const totalOrderValue = body.items.reduce(
+        (sum, it) => sum + (it.requestedQuantityKg * (it.sellingPricePerKg || orderSellingPrice || 0)),
+        0
+      );
+      const totalEstimatedCost = body.items.reduce(
+        (sum, it) => sum + (it.requestedQuantityKg * (it.recipeCostPerKg || orderRecipeCost || 0)),
+        0
+      );
+
       const newOrder: InMemOrder = {
         id: orderId,
         tenant_id: tenantId,
@@ -318,9 +341,9 @@ export const createOrder = async (req: Request, res: Response) => {
         total_requested_weight_kg: totalWeight,
         grade: orderGrade,
         size_micron: orderSizeMicron,
-        selling_price_per_kg: orderSellingPrice,
-        recipe_cost_per_kg: orderRecipeCost,
-        total_order_value: Number((orderSellingPrice * totalWeight).toFixed(2)),
+        selling_price_per_kg: totalWeight > 0 ? Number((totalOrderValue / totalWeight).toFixed(2)) : orderSellingPrice,
+        recipe_cost_per_kg: totalWeight > 0 ? Number((totalEstimatedCost / totalWeight).toFixed(2)) : orderRecipeCost,
+        total_order_value: Number(totalOrderValue.toFixed(2)),
         notes: formattedHeaderNotes,
         created_by: userId,
         created_at: new Date().toISOString(),
@@ -370,6 +393,8 @@ export const createOrder = async (req: Request, res: Response) => {
         requested_quantity_kg: item.requestedQuantityKg,
         planned_quantity_kg: item.requestedQuantityKg,
         status: 'pending',
+        size_micron: itemSizeMicron || null,
+        grade: itemGrade || null,
         notes: formatOrderNotes(item.notes || body.notes, itemGrade, itemSizeMicron, itemSelling, itemCost),
       };
     });
