@@ -30,6 +30,8 @@ export interface MockStoreData {
   jobWorkMaterialOutward: any[];
   jobWorkOrders: any[];
   jobWorkReceipts: any[];
+  scrapEntries: any[];
+  scrapSales: any[];
 }
 
 const defaultData: MockStoreData = {
@@ -48,6 +50,8 @@ const defaultData: MockStoreData = {
   jobWorkMaterialOutward: [],
   jobWorkOrders: [],
   jobWorkReceipts: [],
+  scrapEntries: [],
+  scrapSales: [],
 };
 
 function loadStore(): MockStoreData {
@@ -71,6 +75,8 @@ function loadStore(): MockStoreData {
         jobWorkMaterialOutward: parsed.jobWorkMaterialOutward || [],
         jobWorkOrders: parsed.jobWorkOrders || [],
         jobWorkReceipts: parsed.jobWorkReceipts || [],
+        scrapEntries: parsed.scrapEntries || [],
+        scrapSales: parsed.scrapSales || [],
       };
     }
   } catch (err) {

@@ -50,5 +50,7 @@
   "jobWorkers": [],
   "jobWorkMaterialOutward": [],
   "jobWorkOrders": [],
-  "jobWorkReceipts": []
+  "jobWorkReceipts": [],
+  "scrapEntries": [],
+  "scrapSales": []
 }

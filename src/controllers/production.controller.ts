@@ -379,6 +379,25 @@ export const confirmProductionBatch = async (req: Request, res: Response) => {
         },
       ];
 
+      // Automatically log on-floor scrap if waste was produced
+      if (totalWaste > 0) {
+        if (!mockStore.scrapEntries) mockStore.scrapEntries = [];
+        mockStore.scrapEntries.unshift({
+          id: `scrap-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+          tenant_id: tenantId,
+          entry_number: `SCRAP-${batch.batch_number.replace('PB-', '')}`,
+          entry_date: new Date().toISOString().split('T')[0],
+          source_type: 'production_batch',
+          production_batch_id: batch.id,
+          product_id: batch.product_id,
+          scrap_type: trimWaste > 0 && plantWaste > 0 ? 'Trim & Plant Waste' : (trimWaste > 0 ? 'Trim Waste' : 'Plant Scrap'),
+          quantity_kg: totalWaste,
+          notes: `Auto-logged from Production Batch ${batch.batch_number} (Trim: ${trimWaste} kg, Plant: ${plantWaste} kg)`,
+          recorded_by: userId || null,
+          created_at: new Date().toISOString(),
+        });
+      }
+
       // Slitting Output Split vs Single Batch
       const fgBatchBase = `FG-${batch.batch_number.replace('PB-', '')}`;
       const isSlitting = Boolean(batch.is_slitting_batch || (body.splitOutputs && body.splitOutputs.length > 0));
@@ -568,6 +587,23 @@ export const confirmProductionBatch = async (req: Request, res: Response) => {
       recorded_by: userId,
       notes: body.notes
     });
+
+    // Automatically log on-floor scrap if waste was produced
+    if (totalWaste > 0) {
+      const entryNum = `SCRAP-${batch.batch_number.replace('PB-', '')}`;
+      await supabase.from('scrap_entries').insert({
+        tenant_id: tenantId,
+        entry_number: entryNum,
+        entry_date: new Date().toISOString().split('T')[0],
+        source_type: 'production_batch',
+        production_batch_id: batchId,
+        product_id: batch.product_id,
+        scrap_type: trimWaste > 0 && plantWaste > 0 ? 'Trim & Plant Waste' : (trimWaste > 0 ? 'Trim Waste' : 'Plant Scrap'),
+        quantity_kg: totalWaste,
+        notes: `Auto-logged from Production Batch ${batch.batch_number} (Trim: ${trimWaste} kg, Plant: ${plantWaste} kg)`,
+        recorded_by: userId || null,
+      });
+    }
 
     // 5. Create Finished Goods Batches (supports multi-order slitting split or single batch)
     const fgBatchBase = `FG-${batch.batch_number}`;
