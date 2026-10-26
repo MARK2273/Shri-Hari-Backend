@@ -46,6 +46,7 @@ export const getProductionVarianceReport = async (req: Request, res: Response) =
           batch_number: b.batch_number,
           operator_name: b.operator_name,
           product_name: prod?.name || 'Finished Product',
+          completion_time: b.completion_time || b.updated_at || b.created_at,
           planned_input_kg: plannedInput,
           actual_input_kg: actualInput,
           accepted_output_kg: acceptedOutput,
@@ -53,7 +54,7 @@ export const getProductionVarianceReport = async (req: Request, res: Response) =
           plant_waste_kg: plantWasteKg,
           waste_kg: wasteKg,
           rejected_kg: rejectedKg,
-          input_variance_kg: actualInput - plannedInput,
+          input_variance_kg: Number((actualInput - plannedInput).toFixed(3)),
           yield_percentage: yieldPct,
           waste_percentage: wastePct,
           materials: consumption.map((m: any) => {
@@ -62,9 +63,10 @@ export const getProductionVarianceReport = async (req: Request, res: Response) =
             const aKg = Number(m.actual_quantity_kg || pKg);
             return {
               material_name: mat?.name || 'Polymer',
+              material_code: mat?.code || '',
               planned_kg: pKg,
               actual_kg: aKg,
-              variance_kg: aKg - pKg,
+              variance_kg: Number((aKg - pKg).toFixed(3)),
             };
           }),
         };
@@ -106,6 +108,7 @@ export const getProductionVarianceReport = async (req: Request, res: Response) =
         batch_number: b.batch_number,
         operator_name: b.operator_name,
         product_name: b.products?.name,
+        completion_time: b.completion_time,
         planned_input_kg: planned,
         actual_input_kg: actualInput,
         accepted_output_kg: accepted,
@@ -113,14 +116,15 @@ export const getProductionVarianceReport = async (req: Request, res: Response) =
         plant_waste_kg: plantWaste,
         waste_kg: waste,
         rejected_kg: rejected,
-        input_variance_kg: actualInput - planned,
+        input_variance_kg: Number((actualInput - planned).toFixed(3)),
         yield_percentage: Number(yieldPct.toFixed(2)),
         waste_percentage: Number(wastePct.toFixed(2)),
         materials: (b.production_material_consumption || []).map((m: any) => ({
           material_name: m.materials?.name,
+          material_code: m.materials?.code,
           planned_kg: Number(m.planned_quantity_kg),
           actual_kg: Number(m.actual_quantity_kg),
-          variance_kg: Number(m.actual_quantity_kg) - Number(m.planned_quantity_kg),
+          variance_kg: Number((Number(m.actual_quantity_kg) - Number(m.planned_quantity_kg)).toFixed(3)),
         })),
       };
     });
