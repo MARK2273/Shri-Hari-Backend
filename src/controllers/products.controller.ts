@@ -512,67 +512,122 @@ export const addRecipeVersion = async (req: Request, res: Response) => {
   }
 };
 
-// Calculate planned raw material requirements before production (PRD-05)
-export const calculateRequirements = async (req: Request, res: Response) => {
-  try {
-    const tenantId = getTenantId(req);
-    const { recipeId, quantityKg } = req.body;
+export interface MaterialRequirementDetail {
+  material_id: string;
+  material_code: string;
+  material_name: string;
+  percentage: number;
+  planned_kg_per_kg_output: number;
+  required_kg: number;
+  available_stock_kg: number;
+  sufficient: boolean;
+  suggested_batches?: any[];
+}
 
-    if (!recipeId || !quantityKg || quantityKg <= 0) {
-      return res.status(400).json({ success: false, message: 'recipeId and positive quantityKg required' });
-    }
+export interface MaterialStockCheckResult {
+  sufficient: boolean;
+  all_sufficient: boolean;
+  recipe_id?: string;
+  product_id?: string;
+  planned_quantity_kg: number;
+  requirements: MaterialRequirementDetail[];
+  missingDetails?: string;
+}
 
-    if (!isSupabaseConfigured) {
-      let foundRecipe: InMemRecipe | null = null;
-      for (const p of inMemProducts) {
-        if (p.tenant_id === tenantId) {
+// Helper to check raw material stock feasibility for a product or recipe
+export async function checkProductMaterialStock(
+  tenantId: string,
+  productId?: string,
+  recipeId?: string,
+  quantityKg: number = 0
+): Promise<MaterialStockCheckResult> {
+  const qty = Number(quantityKg);
+  if (qty <= 0) {
+    return {
+      sufficient: true,
+      all_sufficient: true,
+      planned_quantity_kg: 0,
+      requirements: [],
+    };
+  }
+
+  if (!isSupabaseConfigured) {
+    let foundRecipe: InMemRecipe | null = null;
+    let resolvedProductId = productId;
+
+    for (const p of inMemProducts) {
+      if (p.tenant_id === tenantId) {
+        if (recipeId) {
           const r = (p.product_recipes || []).find((rec) => rec.id === recipeId);
           if (r) {
             foundRecipe = r;
+            resolvedProductId = p.id;
             break;
           }
+        } else if (productId && p.id === productId) {
+          foundRecipe = (p.product_recipes || []).find((rec) => rec.is_active) || (p.product_recipes || [])[0] || null;
+          resolvedProductId = p.id;
+          break;
         }
       }
-
-      if (!foundRecipe) {
-        return res.status(404).json({ success: false, message: 'Recipe not found' });
-      }
-
-      const requirements = foundRecipe.product_recipe_items.map((item) => {
-        const requiredKg = Number(quantityKg) * Number(item.planned_kg_per_kg_output);
-        const availableBatches = inMemBatches.filter(
-          (b) => b.tenant_id === tenantId && b.material_id === item.material_id && b.status === 'available' && b.remaining_quantity_kg > 0
-        );
-        const totalAvailable = availableBatches.reduce((acc, b) => acc + b.remaining_quantity_kg, 0);
-
-        return {
-          material_id: item.material_id,
-          material_code: item.materials?.code || 'MAT-XXX',
-          material_name: item.materials?.name || 'Raw Material',
-          percentage: item.percentage,
-          planned_kg_per_kg_output: item.planned_kg_per_kg_output,
-          required_kg: requiredKg,
-          available_stock_kg: totalAvailable,
-          sufficient: totalAvailable >= requiredKg,
-          suggested_batches: availableBatches,
-        };
-      });
-
-      const allSufficient = requirements.every((r) => r.sufficient);
-
-      return res.json({
-        success: true,
-        recipe_id: foundRecipe.id,
-        planned_quantity_kg: quantityKg,
-        all_sufficient: allSufficient,
-        requirements,
-      });
     }
 
-    const { data: recipe, error: recError } = await supabase
+    if (!foundRecipe) {
+      return {
+        sufficient: true,
+        all_sufficient: true,
+        planned_quantity_kg: qty,
+        requirements: [],
+      };
+    }
+
+    const requirements: MaterialRequirementDetail[] = (foundRecipe.product_recipe_items || []).map((item) => {
+      const plannedPerKg = Number(item.planned_kg_per_kg_output) || (Number(item.percentage || 0) / 100) || 1;
+      const requiredKg = Number((qty * plannedPerKg).toFixed(4));
+      const mat = inMemMaterials.find((m) => m.id === item.material_id);
+      const availableBatches = inMemBatches.filter(
+        (b) => b.tenant_id === tenantId && b.material_id === item.material_id && b.status === 'available' && Number(b.remaining_quantity_kg || 0) > 0
+      );
+      const totalAvailable = Number(availableBatches.reduce((acc, b) => acc + Number(b.remaining_quantity_kg || 0), 0).toFixed(4));
+
+      return {
+        material_id: item.material_id,
+        material_code: item.materials?.code || mat?.code || 'MAT-RAW',
+        material_name: item.materials?.name || mat?.name || 'Raw Material',
+        percentage: Number(item.percentage || 0),
+        planned_kg_per_kg_output: plannedPerKg,
+        required_kg: requiredKg,
+        available_stock_kg: totalAvailable,
+        sufficient: totalAvailable >= requiredKg,
+        suggested_batches: availableBatches,
+      };
+    });
+
+    const allSufficient = requirements.every((r) => r.sufficient);
+    const missing = requirements
+      .filter((r) => !r.sufficient)
+      .map((r) => `"${r.material_name}" requires ${r.required_kg} kg but only ${r.available_stock_kg} kg is available in stock`);
+
+    return {
+      sufficient: allSufficient,
+      all_sufficient: allSufficient,
+      recipe_id: foundRecipe.id,
+      product_id: resolvedProductId,
+      planned_quantity_kg: qty,
+      requirements,
+      missingDetails: missing.length > 0 ? missing.join('; ') : undefined,
+    };
+  }
+
+  // Supabase implementation
+  let recipe: any = null;
+  let resolvedProductId = productId;
+
+  if (recipeId) {
+    const { data: recData } = await supabase
       .from('product_recipes')
       .select(`
-        id, version, product_id,
+        id, version, product_id, is_active,
         product_recipe_items (
           material_id, percentage, planned_kg_per_kg_output,
           materials (id, code, name, standard_unit)
@@ -581,48 +636,103 @@ export const calculateRequirements = async (req: Request, res: Response) => {
       .eq('id', recipeId)
       .eq('tenant_id', tenantId)
       .single();
+    recipe = recData;
+    if (recipe) resolvedProductId = recipe.product_id;
+  } else if (productId) {
+    const { data: recData } = await supabase
+      .from('product_recipes')
+      .select(`
+        id, version, product_id, is_active,
+        product_recipe_items (
+          material_id, percentage, planned_kg_per_kg_output,
+          materials (id, code, name, standard_unit)
+        )
+      `)
+      .eq('product_id', productId)
+      .eq('tenant_id', tenantId)
+      .order('is_active', { ascending: false })
+      .order('version', { ascending: false });
 
-    if (recError || !recipe) {
-      return res.status(404).json({ success: false, message: 'Recipe not found' });
+    recipe = (recData && recData.length > 0) ? (recData.find((r: any) => r.is_active) || recData[0]) : null;
+  }
+
+  if (!recipe || !recipe.product_recipe_items || recipe.product_recipe_items.length === 0) {
+    return {
+      sufficient: true,
+      all_sufficient: true,
+      planned_quantity_kg: qty,
+      requirements: [],
+    };
+  }
+
+  const requirements: MaterialRequirementDetail[] = await Promise.all(
+    (recipe.product_recipe_items || []).map(async (item: any) => {
+      const plannedPerKg = Number(item.planned_kg_per_kg_output) || (Number(item.percentage || 0) / 100) || 1;
+      const requiredKg = Number((qty * plannedPerKg).toFixed(4));
+      const { data: batches } = await supabase
+        .from('material_batches')
+        .select('id, batch_number, remaining_quantity_kg, receipt_date')
+        .eq('material_id', item.material_id)
+        .eq('tenant_id', tenantId)
+        .eq('status', 'available')
+        .gt('remaining_quantity_kg', 0)
+        .order('receipt_date', { ascending: true });
+
+      const totalAvailable = Number(
+        (batches || []).reduce((acc: number, b: any) => acc + Number(b.remaining_quantity_kg || 0), 0).toFixed(4)
+      );
+
+      return {
+        material_id: item.material_id,
+        material_code: item.materials?.code || 'MAT-RAW',
+        material_name: item.materials?.name || 'Raw Material',
+        percentage: Number(item.percentage || 0),
+        planned_kg_per_kg_output: plannedPerKg,
+        required_kg: requiredKg,
+        available_stock_kg: totalAvailable,
+        sufficient: totalAvailable >= requiredKg,
+        suggested_batches: batches || [],
+      };
+    })
+  );
+
+  const allSufficient = requirements.every((r) => r.sufficient);
+  const missing = requirements
+    .filter((r) => !r.sufficient)
+    .map((r) => `"${r.material_name}" requires ${r.required_kg} kg but only ${r.available_stock_kg} kg is available in stock`);
+
+  return {
+    sufficient: allSufficient,
+    all_sufficient: allSufficient,
+    recipe_id: recipe.id,
+    product_id: resolvedProductId,
+    planned_quantity_kg: qty,
+    requirements,
+    missingDetails: missing.length > 0 ? missing.join('; ') : undefined,
+  };
+}
+
+// Calculate planned raw material requirements before production (PRD-05)
+export const calculateRequirements = async (req: Request, res: Response) => {
+  try {
+    const tenantId = getTenantId(req);
+    const { recipeId, productId, quantityKg } = req.body;
+
+    if ((!recipeId && !productId) || !quantityKg || Number(quantityKg) <= 0) {
+      return res.status(400).json({ success: false, message: 'recipeId or productId and positive quantityKg required' });
     }
 
-    // Check available batches for each material
-    const requirements = await Promise.all(
-      (recipe.product_recipe_items || []).map(async (item: any) => {
-        const requiredKg = Number(quantityKg) * Number(item.planned_kg_per_kg_output);
-        const { data: batches } = await supabase
-          .from('material_batches')
-          .select('id, batch_number, remaining_quantity_kg, receipt_date')
-          .eq('material_id', item.material_id)
-          .eq('tenant_id', tenantId)
-          .eq('status', 'available')
-          .gt('remaining_quantity_kg', 0)
-          .order('receipt_date', { ascending: true }); // FIFO order
-
-        const totalAvailable = (batches || []).reduce((acc: number, b: any) => acc + Number(b.remaining_quantity_kg), 0);
-
-        return {
-          material_id: item.material_id,
-          material_code: item.materials?.code,
-          material_name: item.materials?.name,
-          percentage: item.percentage,
-          planned_kg_per_kg_output: item.planned_kg_per_kg_output,
-          required_kg: requiredKg,
-          available_stock_kg: totalAvailable,
-          sufficient: totalAvailable >= requiredKg,
-          suggested_batches: batches || [],
-        };
-      })
-    );
-
-    const allSufficient = requirements.every((r) => r.sufficient);
+    const check = await checkProductMaterialStock(tenantId, productId, recipeId, Number(quantityKg));
 
     return res.json({
       success: true,
-      recipe_id: recipe.id,
-      planned_quantity_kg: quantityKg,
-      all_sufficient: allSufficient,
-      requirements,
+      recipe_id: check.recipe_id,
+      product_id: check.product_id,
+      planned_quantity_kg: check.planned_quantity_kg,
+      all_sufficient: check.all_sufficient,
+      sufficient: check.sufficient,
+      requirements: check.requirements,
+      missingDetails: check.missingDetails,
     });
   } catch (error: any) {
     return res.status(500).json({ success: false, message: error.message });
