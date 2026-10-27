@@ -9,6 +9,7 @@ import {
   deleteCustomer,
   seedDefaultCustomers,
   increaseOrderQuantity,
+  cancelOrder,
 } from '../controllers/orders.controller';
 import { authenticateToken, requireRole } from '../middleware/auth.middleware';
 
@@ -22,6 +23,9 @@ router.post('/', requireRole('factory_admin', 'supervisor'), createOrder);
 router.put('/:id', requireRole('factory_admin', 'supervisor'), updateOrder);
 router.patch('/:id/increase-quantity', requireRole('factory_admin', 'supervisor'), increaseOrderQuantity);
 router.put('/:id/increase-quantity', requireRole('factory_admin', 'supervisor'), increaseOrderQuantity);
+router.post('/:id/cancel', requireRole('factory_admin', 'supervisor'), cancelOrder);
+router.patch('/:id/cancel', requireRole('factory_admin', 'supervisor'), cancelOrder);
+router.put('/:id/cancel', requireRole('factory_admin', 'supervisor'), cancelOrder);
 
 // Customers management
 router.get('/customers', getCustomers);

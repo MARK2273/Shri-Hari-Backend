@@ -1671,3 +1671,151 @@ export const updateOrder = async (req: Request, res: Response) => {
   }
 };
 
+// Cancel Customer Order (only allowed when order is NOT in the production run)
+export const cancelOrder = async (req: Request, res: Response) => {
+  try {
+    const tenantId = getTenantId(req);
+    const userId = req.user?.id;
+    const { id } = req.params;
+
+    const schema = z.object({
+      reason: z.string().optional(),
+    });
+    const body = schema.parse(req.body || {});
+
+    // 1. Strict check: Order MUST NOT be in the production run
+    const prodCheck = await checkIsOrderInProductionRun(id, tenantId);
+    if (prodCheck.inProduction) {
+      return res.status(400).json({
+        success: false,
+        message: `Cannot cancel order: This order is already in the production run (${prodCheck.reason}). Orders with active production or completed batches cannot be cancelled.`,
+      });
+    }
+
+    if (!isSupabaseConfigured) {
+      const order = inMemOrders.find((o) => o.id === id && o.tenant_id === tenantId);
+      if (!order) {
+        return res.status(404).json({ success: false, message: 'Customer order not found.' });
+      }
+
+      if (order.status === 'cancelled') {
+        return res.status(400).json({ success: false, message: 'This order is already cancelled.' });
+      }
+
+      if (['completed', 'delivered'].includes(order.status)) {
+        return res.status(400).json({
+          success: false,
+          message: `Cannot cancel order because it is already ${order.status}.`,
+        });
+      }
+
+      order.status = 'cancelled';
+      (order.customer_order_items || []).forEach((item) => {
+        item.status = 'cancelled';
+      });
+
+      const cancelNote = body.reason?.trim()
+        ? ` [Order Cancelled: ${body.reason.trim()}]`
+        : ` [Order Cancelled on ${new Date().toISOString().split('T')[0]}]`;
+      order.notes = order.notes ? `${order.notes}${cancelNote}` : cancelNote.trim();
+
+      saveMockStore();
+
+      mockStore.auditLogs.unshift({
+        id: crypto.randomUUID(),
+        tenant_id: tenantId,
+        user_id: userId,
+        action: 'CANCEL_CUSTOMER_ORDER',
+        entity_name: 'customer_orders',
+        entity_id: order.id,
+        new_values: { status: 'cancelled', reason: body.reason, cancelled_at: new Date().toISOString() },
+        created_at: new Date().toISOString(),
+      });
+
+      return res.json({
+        success: true,
+        message: `Order ${order.order_number} has been cancelled successfully.`,
+        order,
+      });
+    }
+
+    // Supabase implementation
+    const { data: order, error: ordErr } = await supabase
+      .from('customer_orders')
+      .select('id, order_number, status, notes, tenant_id')
+      .eq('id', id)
+      .single();
+
+    if (ordErr || !order) {
+      return res.status(404).json({ success: false, message: 'Customer order not found.' });
+    }
+
+    if (order.status === 'cancelled') {
+      return res.status(400).json({ success: false, message: 'This order is already cancelled.' });
+    }
+
+    if (['completed', 'delivered'].includes(order.status)) {
+      return res.status(400).json({
+        success: false,
+        message: `Cannot cancel order because it is already ${order.status}.`,
+      });
+    }
+
+    // Update customer_order_items status to cancelled
+    await supabase
+      .from('customer_order_items')
+      .update({ status: 'cancelled' })
+      .eq('order_id', id);
+
+    const parsedOrder = parseOrderNotes(order.notes);
+    const cancelNote = body.reason?.trim()
+      ? ` [Order Cancelled: ${body.reason.trim()}]`
+      : ` [Order Cancelled on ${new Date().toISOString().split('T')[0]}]`;
+    const updatedNotesText = parsedOrder.notes ? `${parsedOrder.notes}${cancelNote}` : cancelNote.trim();
+    const formattedOrderNotes = formatOrderNotes(
+      updatedNotesText,
+      parsedOrder.grade,
+      parsedOrder.sizeMicron,
+      parsedOrder.sellingPricePerKg,
+      parsedOrder.recipeCostPerKg
+    );
+
+    const { data: updatedOrder, error: upErr } = await supabase
+      .from('customer_orders')
+      .update({
+        status: 'cancelled',
+        notes: formattedOrderNotes,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', id)
+      .select('*')
+      .single();
+
+    if (upErr) {
+      console.error('[cancelOrder] Update error:', upErr);
+      throw upErr;
+    }
+
+    // Audit log
+    await supabase.from('audit_logs').insert({
+      tenant_id: order.tenant_id || tenantId,
+      user_id: userId,
+      action: 'CANCEL_CUSTOMER_ORDER',
+      entity_name: 'customer_orders',
+      entity_id: id,
+      new_values: { status: 'cancelled', reason: body.reason, cancelled_at: new Date().toISOString() },
+    });
+
+    return res.json({
+      success: true,
+      message: `Order ${order.order_number} has been cancelled successfully.`,
+      order: updatedOrder,
+    });
+  } catch (error: any) {
+    if (error instanceof z.ZodError) {
+      return res.status(400).json({ success: false, errors: error.issues });
+    }
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
