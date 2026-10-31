@@ -281,6 +281,26 @@ export const createProduct = async (req: Request, res: Response) => {
     const body = schema.parse(req.body);
     const generatedCode = body.code ? body.code.toUpperCase() : `PRD-${Math.floor(Math.random() * 9000 + 1000)}`;
 
+    // Validate that sum of plate inputs equals mixture total if recipe items are provided
+    if (body.initialRecipe && body.initialRecipe.items && body.initialRecipe.items.length > 0) {
+      const containerMixKg = body.initialRecipe.items.reduce(
+        (sum, it) => sum + (Number(it.quantityKg ?? it.percentage ?? (it.plannedKgPerKgOutput ? it.plannedKgPerKgOutput * 100 : 0)) || 0),
+        0
+      );
+      const plateA = Number(body.initialRecipe.plateA_kg ?? body.initialRecipe.plate_a_kg ?? 0);
+      const plateB = Number(body.initialRecipe.plateB_kg ?? body.initialRecipe.plate_b_kg ?? 0);
+      const plateC = Number(body.initialRecipe.plateC_kg ?? body.initialRecipe.plate_c_kg ?? 0);
+      const plateSum = Number((plateA + plateB + plateC).toFixed(3));
+      const roundedMix = Number(containerMixKg.toFixed(3));
+
+      if (Math.abs(plateSum - roundedMix) > 0.05) {
+        return res.status(400).json({
+          success: false,
+          message: `Validation Error: Total machine plate inputs (Plate A: ${plateA} kg + Plate B: ${plateB} kg + Plate C: ${plateC} kg = ${plateSum} kg) must equal the master container mixture total (${roundedMix} kg). Please balance the plate split.`,
+        });
+      }
+    }
+
     if (!isSupabaseConfigured) {
       const newProductId = crypto.randomUUID();
       const newRecipeId = crypto.randomUUID();
@@ -575,14 +595,25 @@ export const addRecipeVersion = async (req: Request, res: Response) => {
 
     const body = schema.parse(req.body);
 
-    const totalKg = body.items.reduce(
+    const containerMixKg = body.items.reduce(
       (sum, it) => sum + (Number(it.quantityKg ?? it.percentage ?? (it.plannedKgPerKgOutput ? it.plannedKgPerKgOutput * 100 : 0)) || 0),
       0
-    ) || 1;
+    );
 
     const plateA = Number(body.plateA_kg ?? body.plate_a_kg ?? 0);
     const plateB = Number(body.plateB_kg ?? body.plate_b_kg ?? 0);
     const plateC = Number(body.plateC_kg ?? body.plate_c_kg ?? 0);
+    const plateSum = Number((plateA + plateB + plateC).toFixed(3));
+    const roundedMix = Number(containerMixKg.toFixed(3));
+
+    if (Math.abs(plateSum - roundedMix) > 0.05) {
+      return res.status(400).json({
+        success: false,
+        message: `Validation Error: Total machine plate inputs (Plate A: ${plateA} kg + Plate B: ${plateB} kg + Plate C: ${plateC} kg = ${plateSum} kg) must equal the master container mixture total (${roundedMix} kg). Please balance the plate split.`,
+      });
+    }
+
+    const totalKg = containerMixKg || 1;
     const batchKg = Number(body.totalBatchKg ?? body.total_batch_kg ?? totalKg);
 
     if (!isSupabaseConfigured) {
