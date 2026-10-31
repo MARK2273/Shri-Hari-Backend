@@ -8,6 +8,7 @@ interface InMemRecipeItem {
   id: string;
   recipe_id: string;
   material_id: string;
+  quantity_kg?: number;
   percentage: number;
   planned_kg_per_kg_output: number;
   materials?: any;
@@ -75,7 +76,8 @@ export const getProducts = async (req: Request, res: Response) => {
         if (activeRecipe?.product_recipe_items) {
           recipeCost = activeRecipe.product_recipe_items.reduce((sum: number, it: any) => {
             const cost = costMap[it.material_id] || 0;
-            return sum + ((Number(it.percentage) || 0) / 100) * cost;
+            const ratio = Number(it.planned_kg_per_kg_output) || ((Number(it.percentage) || 0) / 100);
+            return sum + ratio * cost;
           }, 0);
         }
         return {
@@ -96,7 +98,7 @@ export const getProducts = async (req: Request, res: Response) => {
         product_recipes (
           id, version, is_active, notes, effective_date,
           product_recipe_items (
-            id, material_id, percentage, planned_kg_per_kg_output,
+            id, material_id, quantity_kg, percentage, planned_kg_per_kg_output,
             materials (id, code, name, standard_unit)
           )
         )
@@ -136,7 +138,8 @@ export const getProducts = async (req: Request, res: Response) => {
       if (activeRecipe?.product_recipe_items) {
         recipeCost = activeRecipe.product_recipe_items.reduce((sum: number, it: any) => {
           const cost = costMap[it.material_id] || 0;
-          return sum + ((Number(it.percentage) || 0) / 100) * cost;
+          const ratio = Number(it.planned_kg_per_kg_output) || ((Number(it.percentage) || 0) / 100);
+          return sum + ratio * cost;
         }, 0);
       }
       return {
@@ -171,8 +174,9 @@ export const createProduct = async (req: Request, res: Response) => {
         notes: z.string().optional(),
         items: z.array(z.object({
           materialId: z.string().min(1),
-          percentage: z.coerce.number().min(0).max(100),
-          plannedKgPerKgOutput: z.coerce.number().min(0),
+          quantityKg: z.coerce.number().min(0).optional(),
+          percentage: z.coerce.number().min(0).optional(),
+          plannedKgPerKgOutput: z.coerce.number().min(0).optional(),
         })).min(1),
       }).optional(),
     });
@@ -186,14 +190,25 @@ export const createProduct = async (req: Request, res: Response) => {
 
       let initialRecipes: InMemRecipe[] = [];
       if (body.initialRecipe) {
+        const totalKg = body.initialRecipe.items.reduce(
+          (sum, it) => sum + (Number(it.quantityKg ?? it.percentage ?? (it.plannedKgPerKgOutput ? it.plannedKgPerKgOutput * 100 : 0)) || 0),
+          0
+        ) || 1;
+
         const recipeItems: InMemRecipeItem[] = body.initialRecipe.items.map((i) => {
           const mat = inMemMaterials.find((m) => m.id === i.materialId);
+          const itemKg = Number(i.quantityKg ?? (i.plannedKgPerKgOutput ? i.plannedKgPerKgOutput * 100 : i.percentage) ?? 0);
+          const ratio = totalKg > 0 ? (itemKg / totalKg) : (Number(i.percentage || 0) / 100);
+          const plannedPerKg = Number((i.plannedKgPerKgOutput ?? ratio).toFixed(6));
+          const pct = Number((ratio * 100).toFixed(3));
+
           return {
             id: crypto.randomUUID(),
             recipe_id: newRecipeId,
             material_id: i.materialId,
-            percentage: i.percentage,
-            planned_kg_per_kg_output: i.plannedKgPerKgOutput,
+            quantity_kg: itemKg,
+            percentage: pct,
+            planned_kg_per_kg_output: plannedPerKg,
             materials: mat ? { id: mat.id, code: mat.code, name: mat.name, standard_unit: mat.standard_unit } : undefined,
           };
         });
@@ -271,12 +286,25 @@ export const createProduct = async (req: Request, res: Response) => {
 
       if (recError) throw recError;
 
-      const items = body.initialRecipe.items.map((item) => ({
-        recipe_id: recipe.id,
-        material_id: item.materialId,
-        percentage: item.percentage,
-        planned_kg_per_kg_output: item.plannedKgPerKgOutput,
-      }));
+      const totalKg = body.initialRecipe.items.reduce(
+        (sum, it) => sum + (Number(it.quantityKg ?? it.percentage ?? (it.plannedKgPerKgOutput ? it.plannedKgPerKgOutput * 100 : 0)) || 0),
+        0
+      ) || 1;
+
+      const items = body.initialRecipe.items.map((item) => {
+        const itemKg = Number(item.quantityKg ?? (item.plannedKgPerKgOutput ? item.plannedKgPerKgOutput * 100 : item.percentage) ?? 0);
+        const ratio = totalKg > 0 ? (itemKg / totalKg) : (Number(item.percentage || 0) / 100);
+        const plannedPerKg = Number((item.plannedKgPerKgOutput ?? ratio).toFixed(6));
+        const pct = Number((ratio * 100).toFixed(3));
+
+        return {
+          recipe_id: recipe.id,
+          material_id: item.materialId,
+          quantity_kg: itemKg,
+          percentage: pct,
+          planned_kg_per_kg_output: plannedPerKg,
+        };
+      });
 
       await supabase.from('product_recipe_items').insert(items);
     }
@@ -408,12 +436,18 @@ export const addRecipeVersion = async (req: Request, res: Response) => {
       notes: z.string().optional(),
       items: z.array(z.object({
         materialId: z.string().min(1),
-        percentage: z.coerce.number().min(0).max(100),
-        plannedKgPerKgOutput: z.coerce.number().min(0),
+        quantityKg: z.coerce.number().min(0).optional(),
+        percentage: z.coerce.number().min(0).optional(),
+        plannedKgPerKgOutput: z.coerce.number().min(0).optional(),
       })).min(1),
     });
 
     const body = schema.parse(req.body);
+
+    const totalKg = body.items.reduce(
+      (sum, it) => sum + (Number(it.quantityKg ?? it.percentage ?? (it.plannedKgPerKgOutput ? it.plannedKgPerKgOutput * 100 : 0)) || 0),
+      0
+    ) || 1;
 
     if (!isSupabaseConfigured) {
       const product = inMemProducts.find((p) => p.tenant_id === tenantId && p.id === productId);
@@ -432,12 +466,18 @@ export const addRecipeVersion = async (req: Request, res: Response) => {
 
       const recipeItems: InMemRecipeItem[] = body.items.map((i) => {
         const mat = inMemMaterials.find((m) => m.id === i.materialId);
+        const itemKg = Number(i.quantityKg ?? (i.plannedKgPerKgOutput ? i.plannedKgPerKgOutput * 100 : i.percentage) ?? 0);
+        const ratio = totalKg > 0 ? (itemKg / totalKg) : (Number(i.percentage || 0) / 100);
+        const plannedPerKg = Number((i.plannedKgPerKgOutput ?? ratio).toFixed(6));
+        const pct = Number((ratio * 100).toFixed(3));
+
         return {
           id: crypto.randomUUID(),
           recipe_id: newRecId,
           material_id: i.materialId,
-          percentage: i.percentage,
-          planned_kg_per_kg_output: i.plannedKgPerKgOutput,
+          quantity_kg: itemKg,
+          percentage: pct,
+          planned_kg_per_kg_output: plannedPerKg,
           materials: mat ? { id: mat.id, code: mat.code, name: mat.name, standard_unit: mat.standard_unit } : undefined,
         };
       });
@@ -493,12 +533,20 @@ export const addRecipeVersion = async (req: Request, res: Response) => {
 
     if (recError) throw recError;
 
-    const items = body.items.map((i) => ({
-      recipe_id: newRecipe.id,
-      material_id: i.materialId,
-      percentage: i.percentage,
-      planned_kg_per_kg_output: i.plannedKgPerKgOutput,
-    }));
+    const items = body.items.map((i) => {
+      const itemKg = Number(i.quantityKg ?? (i.plannedKgPerKgOutput ? i.plannedKgPerKgOutput * 100 : i.percentage) ?? 0);
+      const ratio = totalKg > 0 ? (itemKg / totalKg) : (Number(i.percentage || 0) / 100);
+      const plannedPerKg = Number((i.plannedKgPerKgOutput ?? ratio).toFixed(6));
+      const pct = Number((ratio * 100).toFixed(3));
+
+      return {
+        recipe_id: newRecipe.id,
+        material_id: i.materialId,
+        quantity_kg: itemKg,
+        percentage: pct,
+        planned_kg_per_kg_output: plannedPerKg,
+      };
+    });
 
     await supabase.from('product_recipe_items').insert(items);
 
@@ -516,6 +564,7 @@ export interface MaterialRequirementDetail {
   material_id: string;
   material_code: string;
   material_name: string;
+  quantity_kg?: number;
   percentage: number;
   planned_kg_per_kg_output: number;
   required_kg: number;
@@ -594,6 +643,7 @@ export async function checkProductMaterialStock(
         material_id: item.material_id,
         material_code: item.materials?.code || mat?.code || 'MAT-RAW',
         material_name: item.materials?.name || mat?.name || 'Raw Material',
+        quantity_kg: Number(item.quantity_kg || item.percentage || Number((plannedPerKg * 100).toFixed(2))),
         percentage: Number(item.percentage || 0),
         planned_kg_per_kg_output: plannedPerKg,
         required_kg: requiredKg,
@@ -629,7 +679,7 @@ export async function checkProductMaterialStock(
       .select(`
         id, version, product_id, is_active,
         product_recipe_items (
-          material_id, percentage, planned_kg_per_kg_output,
+          material_id, quantity_kg, percentage, planned_kg_per_kg_output,
           materials (id, code, name, standard_unit)
         )
       `)
@@ -644,7 +694,7 @@ export async function checkProductMaterialStock(
       .select(`
         id, version, product_id, is_active,
         product_recipe_items (
-          material_id, percentage, planned_kg_per_kg_output,
+          material_id, quantity_kg, percentage, planned_kg_per_kg_output,
           materials (id, code, name, standard_unit)
         )
       `)
@@ -686,6 +736,7 @@ export async function checkProductMaterialStock(
         material_id: item.material_id,
         material_code: item.materials?.code || 'MAT-RAW',
         material_name: item.materials?.name || 'Raw Material',
+        quantity_kg: Number(item.quantity_kg || item.percentage || Number((plannedPerKg * 100).toFixed(2))),
         percentage: Number(item.percentage || 0),
         planned_kg_per_kg_output: plannedPerKg,
         required_kg: requiredKg,
@@ -808,6 +859,7 @@ export const seedDefaultProducts = async (req: Request, res: Response) => {
             id: crypto.randomUUID(),
             recipe_id: recId,
             material_id: mat?.id || `mat-${idx + 1}`,
+            quantity_kg: ratio.percent,
             percentage: ratio.percent,
             planned_kg_per_kg_output: ratio.perKg,
             materials: mat ? { id: mat.id, code: mat.code, name: mat.name, standard_unit: 'kg' } : undefined,
@@ -889,6 +941,7 @@ export const seedDefaultProducts = async (req: Request, res: Response) => {
           return {
             recipe_id: rec.id,
             material_id: mat.id,
+            quantity_kg: ratio.percent,
             percentage: ratio.percent,
             planned_kg_per_kg_output: ratio.perKg,
           };

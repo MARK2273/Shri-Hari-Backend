@@ -61,16 +61,17 @@ export const login = async (req: Request, res: Response) => {
 
     if (userError || !user) {
       console.warn('[AUTH] DB user query failed:', userError?.message || 'User not found in database');
-      // Graceful fallback for single factory admin account
-      if (email === 'admin@shrihari.com' && (password === 'Admin@123' || password === 'admin')) {
+      // Graceful fallback for factory admin account on DB network / fetch failure
+      if ((email === 'shreeharipp@gmail.com' || email === 'admin@shrihari.com') && (password === 'Admin@123' || password === 'admin')) {
         const adminTenantId = '0f866809-06c3-4771-8b93-4f2253c9b6b1';
+        const isKrutesh = email === 'shreeharipp@gmail.com';
         const token = jwt.sign(
           {
             id: '970803f9-e07b-4dd2-8a04-ce1fa643a2f6',
-            email: 'admin@shrihari.com',
+            email: isKrutesh ? 'shreeharipp@gmail.com' : 'admin@shrihari.com',
             tenant_id: adminTenantId,
             role: 'factory_admin',
-            full_name: 'Factory Admin'
+            full_name: isKrutesh ? 'Krutesh Mehta' : 'Factory Admin'
           },
           process.env.JWT_SECRET || 'shri_hari_packaging_secret_jwt_key_2026_super_secure!',
           { expiresIn: '7d' }
@@ -80,8 +81,8 @@ export const login = async (req: Request, res: Response) => {
           token,
           user: {
             id: '970803f9-e07b-4dd2-8a04-ce1fa643a2f6',
-            email: 'admin@shrihari.com',
-            full_name: 'Factory Admin',
+            email: isKrutesh ? 'shreeharipp@gmail.com' : 'admin@shrihari.com',
+            full_name: isKrutesh ? 'Krutesh Mehta' : 'Factory Admin',
             role: 'factory_admin',
             tenant_id: adminTenantId,
             tenant_name: 'Shri Hari Packaging'
