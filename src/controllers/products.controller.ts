@@ -15,28 +15,68 @@ interface InMemRecipeItem {
   materials?: any;
 }
 
-export const computePlateSummary = (items: Array<{ plate_type?: string; quantity_kg?: number; percentage?: number }>) => {
-  const summary: Record<'A' | 'B' | 'C', { total_kg: number; percentage: number; count: number }> = {
-    A: { total_kg: 0, percentage: 0, count: 0 },
-    B: { total_kg: 0, percentage: 0, count: 0 },
-    C: { total_kg: 0, percentage: 0, count: 0 },
+export const computePlateSummary = (
+  plateAOrItems?: any,
+  plateB?: number,
+  plateC?: number,
+  totalBatchKg?: number,
+  orderKg: number = 0
+) => {
+  // If first argument is an array of items (backward compatibility)
+  if (Array.isArray(plateAOrItems)) {
+    const items = plateAOrItems;
+    const total = items.reduce((sum, it) => sum + (Number(it.quantity_kg ?? it.percentage) || 0), 0) || 1;
+    // Default 3-plate split: 40% A (60kg), 26.7% B (40kg), 33.3% C (50kg) for 150kg batch
+    const aKg = Number((total * 0.4).toFixed(2));
+    const bKg = Number((total * (40 / 150)).toFixed(2));
+    const cKg = Number((total - aKg - bKg).toFixed(2));
+    const aFeed = orderKg > 0 ? Number((orderKg * 0.4).toFixed(2)) : aKg;
+    const bFeed = orderKg > 0 ? Number((orderKg * (40 / 150)).toFixed(2)) : bKg;
+    const cFeed = orderKg > 0 ? Number((orderKg * (50 / 150)).toFixed(2)) : cKg;
+    return {
+      A: { total_kg: aKg, recipe_kg: aKg, total_recipe_kg: aKg, percentage: 40.0, feed_kg: aFeed, required_kg: aFeed, count: 1 },
+      B: { total_kg: bKg, recipe_kg: bKg, total_recipe_kg: bKg, percentage: 26.7, feed_kg: bFeed, required_kg: bFeed, count: 1 },
+      C: { total_kg: cKg, recipe_kg: cKg, total_recipe_kg: cKg, percentage: 33.3, feed_kg: cFeed, required_kg: cFeed, count: 1 },
+      total_batch_kg: total,
+      total_plate_kg: total,
+      is_balanced: true,
+    };
+  }
+
+  // Otherwise, plateA, plateB, plateC are direct numbers
+  let aKg = Number(plateAOrItems) || 0;
+  let bKg = Number(plateB) || 0;
+  let cKg = Number(plateC) || 0;
+  let total = Number(totalBatchKg) || 0;
+
+  if (aKg === 0 && bKg === 0 && cKg === 0) {
+    total = total > 0 ? total : 150;
+    aKg = Number((total * 0.4).toFixed(2));
+    bKg = Number((total * (40 / 150)).toFixed(2));
+    cKg = Number((total - aKg - bKg).toFixed(2));
+  } else if (total <= 0) {
+    total = aKg + bKg + cKg;
+  }
+
+  const plateSum = Number((aKg + bKg + cKg).toFixed(2));
+  const calcTotal = total > 0 ? total : (plateSum > 0 ? plateSum : 150);
+
+  const aPct = calcTotal > 0 ? Number(((aKg / calcTotal) * 100).toFixed(1)) : 0;
+  const bPct = calcTotal > 0 ? Number(((bKg / calcTotal) * 100).toFixed(1)) : 0;
+  const cPct = calcTotal > 0 ? Number(((cKg / calcTotal) * 100).toFixed(1)) : 0;
+
+  const aFeed = orderKg > 0 ? Number((orderKg * (aPct / 100)).toFixed(2)) : aKg;
+  const bFeed = orderKg > 0 ? Number((orderKg * (bPct / 100)).toFixed(2)) : bKg;
+  const cFeed = orderKg > 0 ? Number((orderKg * (cPct / 100)).toFixed(2)) : cKg;
+
+  return {
+    A: { total_kg: aKg, recipe_kg: aKg, total_recipe_kg: aKg, percentage: aPct, feed_kg: aFeed, required_kg: aFeed, count: 1 },
+    B: { total_kg: bKg, recipe_kg: bKg, total_recipe_kg: bKg, percentage: bPct, feed_kg: bFeed, required_kg: bFeed, count: 1 },
+    C: { total_kg: cKg, recipe_kg: cKg, total_recipe_kg: cKg, percentage: cPct, feed_kg: cFeed, required_kg: cFeed, count: 1 },
+    total_batch_kg: calcTotal,
+    total_plate_kg: plateSum,
+    is_balanced: Math.abs(plateSum - calcTotal) < 0.05,
   };
-
-  const total = items.reduce((sum, it) => sum + (Number(it.quantity_kg ?? it.percentage) || 0), 0) || 1;
-
-  items.forEach((it) => {
-    const rawPlate = (it.plate_type || 'A').toUpperCase();
-    const plate = (rawPlate === 'B' || rawPlate === 'C' ? rawPlate : 'A') as 'A' | 'B' | 'C';
-    const kg = Number(it.quantity_kg ?? it.percentage) || 0;
-    summary[plate].total_kg = Number((summary[plate].total_kg + kg).toFixed(2));
-    summary[plate].count += 1;
-  });
-
-  (['A', 'B', 'C'] as const).forEach((p) => {
-    summary[p].percentage = Number(((summary[p].total_kg / total) * 100).toFixed(1));
-  });
-
-  return summary;
 };
 
 interface InMemRecipe {
@@ -48,6 +88,10 @@ interface InMemRecipe {
   notes?: string;
   created_by?: string;
   effective_date: string;
+  plate_a_kg?: number;
+  plate_b_kg?: number;
+  plate_c_kg?: number;
+  total_batch_kg?: number;
   product_recipe_items: InMemRecipeItem[];
 }
 
@@ -112,7 +156,12 @@ export const getProducts = async (req: Request, res: Response) => {
             ? {
                 ...activeRecipe,
                 recipe_cost_per_kg: Number(recipeCost.toFixed(2)),
-                plate_summary: computePlateSummary(activeRecipe.product_recipe_items || []),
+                plate_summary: computePlateSummary(
+                  activeRecipe.plate_a_kg,
+                  activeRecipe.plate_b_kg,
+                  activeRecipe.plate_c_kg,
+                  activeRecipe.total_batch_kg
+                ),
               }
             : null,
         };
@@ -125,7 +174,7 @@ export const getProducts = async (req: Request, res: Response) => {
       .select(`
         *,
         product_recipes (
-          id, version, is_active, notes, effective_date,
+          id, version, is_active, notes, effective_date, plate_a_kg, plate_b_kg, plate_c_kg, total_batch_kg,
           product_recipe_items (
             id, material_id, plate_type, quantity_kg, percentage, planned_kg_per_kg_output,
             materials (id, code, name, standard_unit)
@@ -178,7 +227,12 @@ export const getProducts = async (req: Request, res: Response) => {
           ? {
               ...activeRecipe,
               recipe_cost_per_kg: Number(recipeCost.toFixed(2)),
-              plate_summary: computePlateSummary(activeRecipe.product_recipe_items || []),
+              plate_summary: computePlateSummary(
+                activeRecipe.plate_a_kg,
+                activeRecipe.plate_b_kg,
+                activeRecipe.plate_c_kg,
+                activeRecipe.total_batch_kg
+              ),
             }
           : null,
       };
@@ -205,6 +259,14 @@ export const createProduct = async (req: Request, res: Response) => {
       sizeMicron: z.string().optional(),
       initialRecipe: z.object({
         notes: z.string().optional(),
+        plateA_kg: z.coerce.number().min(0).optional(),
+        plateB_kg: z.coerce.number().min(0).optional(),
+        plateC_kg: z.coerce.number().min(0).optional(),
+        plate_a_kg: z.coerce.number().min(0).optional(),
+        plate_b_kg: z.coerce.number().min(0).optional(),
+        plate_c_kg: z.coerce.number().min(0).optional(),
+        totalBatchKg: z.coerce.number().min(0).optional(),
+        total_batch_kg: z.coerce.number().min(0).optional(),
         items: z.array(z.object({
           materialId: z.string().min(1),
           plateType: z.string().optional(),
@@ -229,6 +291,11 @@ export const createProduct = async (req: Request, res: Response) => {
           (sum, it) => sum + (Number(it.quantityKg ?? it.percentage ?? (it.plannedKgPerKgOutput ? it.plannedKgPerKgOutput * 100 : 0)) || 0),
           0
         ) || 1;
+
+        const plateA = Number(body.initialRecipe.plateA_kg ?? body.initialRecipe.plate_a_kg ?? 0);
+        const plateB = Number(body.initialRecipe.plateB_kg ?? body.initialRecipe.plate_b_kg ?? 0);
+        const plateC = Number(body.initialRecipe.plateC_kg ?? body.initialRecipe.plate_c_kg ?? 0);
+        const batchKg = Number(body.initialRecipe.totalBatchKg ?? body.initialRecipe.total_batch_kg ?? totalKg);
 
         const recipeItems: InMemRecipeItem[] = body.initialRecipe.items.map((i) => {
           const mat = inMemMaterials.find((m) => m.id === i.materialId);
@@ -261,6 +328,10 @@ export const createProduct = async (req: Request, res: Response) => {
             notes: body.initialRecipe.notes || 'Initial product BOM formulation',
             created_by: userId,
             effective_date: new Date().toISOString(),
+            plate_a_kg: plateA,
+            plate_b_kg: plateB,
+            plate_c_kg: plateC,
+            total_batch_kg: batchKg,
             product_recipe_items: recipeItems,
           },
         ];
@@ -309,6 +380,16 @@ export const createProduct = async (req: Request, res: Response) => {
 
     // 2. Create version 1 recipe if supplied
     if (body.initialRecipe) {
+      const totalKg = body.initialRecipe.items.reduce(
+        (sum, it) => sum + (Number(it.quantityKg ?? it.percentage ?? (it.plannedKgPerKgOutput ? it.plannedKgPerKgOutput * 100 : 0)) || 0),
+        0
+      ) || 1;
+
+      const plateA = Number(body.initialRecipe.plateA_kg ?? body.initialRecipe.plate_a_kg ?? 0);
+      const plateB = Number(body.initialRecipe.plateB_kg ?? body.initialRecipe.plate_b_kg ?? 0);
+      const plateC = Number(body.initialRecipe.plateC_kg ?? body.initialRecipe.plate_c_kg ?? 0);
+      const batchKg = Number(body.initialRecipe.totalBatchKg ?? body.initialRecipe.total_batch_kg ?? totalKg);
+
       const { data: recipe, error: recError } = await supabase
         .from('product_recipes')
         .insert({
@@ -318,16 +399,15 @@ export const createProduct = async (req: Request, res: Response) => {
           is_active: true,
           notes: body.initialRecipe.notes,
           created_by: userId,
+          plate_a_kg: plateA,
+          plate_b_kg: plateB,
+          plate_c_kg: plateC,
+          total_batch_kg: batchKg,
         })
         .select('*')
         .single();
 
       if (recError) throw recError;
-
-      const totalKg = body.initialRecipe.items.reduce(
-        (sum, it) => sum + (Number(it.quantityKg ?? it.percentage ?? (it.plannedKgPerKgOutput ? it.plannedKgPerKgOutput * 100 : 0)) || 0),
-        0
-      ) || 1;
 
       const items = body.initialRecipe.items.map((item) => {
         const rawPlate = (item.plateType || item.plate_type || 'A').toUpperCase();
@@ -475,6 +555,14 @@ export const addRecipeVersion = async (req: Request, res: Response) => {
 
     const schema = z.object({
       notes: z.string().optional(),
+      plateA_kg: z.coerce.number().min(0).optional(),
+      plateB_kg: z.coerce.number().min(0).optional(),
+      plateC_kg: z.coerce.number().min(0).optional(),
+      plate_a_kg: z.coerce.number().min(0).optional(),
+      plate_b_kg: z.coerce.number().min(0).optional(),
+      plate_c_kg: z.coerce.number().min(0).optional(),
+      totalBatchKg: z.coerce.number().min(0).optional(),
+      total_batch_kg: z.coerce.number().min(0).optional(),
       items: z.array(z.object({
         materialId: z.string().min(1),
         plateType: z.string().optional(),
@@ -491,6 +579,11 @@ export const addRecipeVersion = async (req: Request, res: Response) => {
       (sum, it) => sum + (Number(it.quantityKg ?? it.percentage ?? (it.plannedKgPerKgOutput ? it.plannedKgPerKgOutput * 100 : 0)) || 0),
       0
     ) || 1;
+
+    const plateA = Number(body.plateA_kg ?? body.plate_a_kg ?? 0);
+    const plateB = Number(body.plateB_kg ?? body.plate_b_kg ?? 0);
+    const plateC = Number(body.plateC_kg ?? body.plate_c_kg ?? 0);
+    const batchKg = Number(body.totalBatchKg ?? body.total_batch_kg ?? totalKg);
 
     if (!isSupabaseConfigured) {
       const product = inMemProducts.find((p) => p.tenant_id === tenantId && p.id === productId);
@@ -537,6 +630,10 @@ export const addRecipeVersion = async (req: Request, res: Response) => {
         notes: body.notes || `Recipe Version ${nextVersion}`,
         created_by: userId,
         effective_date: new Date().toISOString(),
+        plate_a_kg: plateA,
+        plate_b_kg: plateB,
+        plate_c_kg: plateC,
+        total_batch_kg: batchKg,
         product_recipe_items: recipeItems,
       };
 
@@ -573,6 +670,10 @@ export const addRecipeVersion = async (req: Request, res: Response) => {
         is_active: true,
         notes: body.notes,
         created_by: userId,
+        plate_a_kg: plateA,
+        plate_b_kg: plateB,
+        plate_c_kg: plateC,
+        total_batch_kg: batchKg,
       })
       .select('*')
       .single();
@@ -630,7 +731,7 @@ export interface MaterialStockCheckResult {
   product_id?: string;
   planned_quantity_kg: number;
   requirements: MaterialRequirementDetail[];
-  plate_summary?: Record<string, { total_recipe_kg: number; required_kg: number; percentage: number }>;
+  plate_summary?: any;
   missingDetails?: string;
 }
 
@@ -739,7 +840,13 @@ export async function checkProductMaterialStock(
       product_id: resolvedProductId,
       planned_quantity_kg: qty,
       requirements,
-      plate_summary: buildPlatesSummary(requirements),
+      plate_summary: computePlateSummary(
+        foundRecipe.plate_a_kg,
+        foundRecipe.plate_b_kg,
+        foundRecipe.plate_c_kg,
+        foundRecipe.total_batch_kg,
+        qty
+      ),
       missingDetails: missing.length > 0 ? missing.join('; ') : undefined,
     };
   }
@@ -752,7 +859,7 @@ export async function checkProductMaterialStock(
     const { data: recData } = await supabase
       .from('product_recipes')
       .select(`
-        id, version, product_id, is_active,
+        id, version, product_id, is_active, plate_a_kg, plate_b_kg, plate_c_kg, total_batch_kg,
         product_recipe_items (
           material_id, plate_type, quantity_kg, percentage, planned_kg_per_kg_output,
           materials (id, code, name, standard_unit)
@@ -767,7 +874,7 @@ export async function checkProductMaterialStock(
     const { data: recData } = await supabase
       .from('product_recipes')
       .select(`
-        id, version, product_id, is_active,
+        id, version, product_id, is_active, plate_a_kg, plate_b_kg, plate_c_kg, total_batch_kg,
         product_recipe_items (
           material_id, plate_type, quantity_kg, percentage, planned_kg_per_kg_output,
           materials (id, code, name, standard_unit)
@@ -835,7 +942,13 @@ export async function checkProductMaterialStock(
     product_id: resolvedProductId,
     planned_quantity_kg: qty,
     requirements,
-    plate_summary: buildPlatesSummary(requirements),
+    plate_summary: computePlateSummary(
+      recipe.plate_a_kg,
+      recipe.plate_b_kg,
+      recipe.plate_c_kg,
+      recipe.total_batch_kg,
+      qty
+    ),
     missingDetails: missing.length > 0 ? missing.join('; ') : undefined,
   };
 }
