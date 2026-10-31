@@ -8,11 +8,36 @@ interface InMemRecipeItem {
   id: string;
   recipe_id: string;
   material_id: string;
+  plate_type?: 'A' | 'B' | 'C' | string;
   quantity_kg?: number;
   percentage: number;
   planned_kg_per_kg_output: number;
   materials?: any;
 }
+
+export const computePlateSummary = (items: Array<{ plate_type?: string; quantity_kg?: number; percentage?: number }>) => {
+  const summary: Record<'A' | 'B' | 'C', { total_kg: number; percentage: number; count: number }> = {
+    A: { total_kg: 0, percentage: 0, count: 0 },
+    B: { total_kg: 0, percentage: 0, count: 0 },
+    C: { total_kg: 0, percentage: 0, count: 0 },
+  };
+
+  const total = items.reduce((sum, it) => sum + (Number(it.quantity_kg ?? it.percentage) || 0), 0) || 1;
+
+  items.forEach((it) => {
+    const rawPlate = (it.plate_type || 'A').toUpperCase();
+    const plate = (rawPlate === 'B' || rawPlate === 'C' ? rawPlate : 'A') as 'A' | 'B' | 'C';
+    const kg = Number(it.quantity_kg ?? it.percentage) || 0;
+    summary[plate].total_kg = Number((summary[plate].total_kg + kg).toFixed(2));
+    summary[plate].count += 1;
+  });
+
+  (['A', 'B', 'C'] as const).forEach((p) => {
+    summary[p].percentage = Number(((summary[p].total_kg / total) * 100).toFixed(1));
+  });
+
+  return summary;
+};
 
 interface InMemRecipe {
   id: string;
@@ -84,7 +109,11 @@ export const getProducts = async (req: Request, res: Response) => {
           ...p,
           recipe_cost_per_kg: Number(recipeCost.toFixed(2)),
           active_recipe: activeRecipe
-            ? { ...activeRecipe, recipe_cost_per_kg: Number(recipeCost.toFixed(2)) }
+            ? {
+                ...activeRecipe,
+                recipe_cost_per_kg: Number(recipeCost.toFixed(2)),
+                plate_summary: computePlateSummary(activeRecipe.product_recipe_items || []),
+              }
             : null,
         };
       });
@@ -98,7 +127,7 @@ export const getProducts = async (req: Request, res: Response) => {
         product_recipes (
           id, version, is_active, notes, effective_date,
           product_recipe_items (
-            id, material_id, quantity_kg, percentage, planned_kg_per_kg_output,
+            id, material_id, plate_type, quantity_kg, percentage, planned_kg_per_kg_output,
             materials (id, code, name, standard_unit)
           )
         )
@@ -146,7 +175,11 @@ export const getProducts = async (req: Request, res: Response) => {
         ...p,
         recipe_cost_per_kg: Number(recipeCost.toFixed(2)),
         active_recipe: activeRecipe
-          ? { ...activeRecipe, recipe_cost_per_kg: Number(recipeCost.toFixed(2)) }
+          ? {
+              ...activeRecipe,
+              recipe_cost_per_kg: Number(recipeCost.toFixed(2)),
+              plate_summary: computePlateSummary(activeRecipe.product_recipe_items || []),
+            }
           : null,
       };
     });
@@ -174,6 +207,8 @@ export const createProduct = async (req: Request, res: Response) => {
         notes: z.string().optional(),
         items: z.array(z.object({
           materialId: z.string().min(1),
+          plateType: z.string().optional(),
+          plate_type: z.string().optional(),
           quantityKg: z.coerce.number().min(0).optional(),
           percentage: z.coerce.number().min(0).optional(),
           plannedKgPerKgOutput: z.coerce.number().min(0).optional(),
@@ -197,6 +232,8 @@ export const createProduct = async (req: Request, res: Response) => {
 
         const recipeItems: InMemRecipeItem[] = body.initialRecipe.items.map((i) => {
           const mat = inMemMaterials.find((m) => m.id === i.materialId);
+          const rawPlate = (i.plateType || i.plate_type || 'A').toUpperCase();
+          const plateType = (rawPlate === 'B' || rawPlate === 'C') ? rawPlate : 'A';
           const itemKg = Number(i.quantityKg ?? (i.plannedKgPerKgOutput ? i.plannedKgPerKgOutput * 100 : i.percentage) ?? 0);
           const ratio = totalKg > 0 ? (itemKg / totalKg) : (Number(i.percentage || 0) / 100);
           const plannedPerKg = Number((i.plannedKgPerKgOutput ?? ratio).toFixed(6));
@@ -206,6 +243,7 @@ export const createProduct = async (req: Request, res: Response) => {
             id: crypto.randomUUID(),
             recipe_id: newRecipeId,
             material_id: i.materialId,
+            plate_type: plateType,
             quantity_kg: itemKg,
             percentage: pct,
             planned_kg_per_kg_output: plannedPerKg,
@@ -292,6 +330,8 @@ export const createProduct = async (req: Request, res: Response) => {
       ) || 1;
 
       const items = body.initialRecipe.items.map((item) => {
+        const rawPlate = (item.plateType || item.plate_type || 'A').toUpperCase();
+        const plateType = (rawPlate === 'B' || rawPlate === 'C') ? rawPlate : 'A';
         const itemKg = Number(item.quantityKg ?? (item.plannedKgPerKgOutput ? item.plannedKgPerKgOutput * 100 : item.percentage) ?? 0);
         const ratio = totalKg > 0 ? (itemKg / totalKg) : (Number(item.percentage || 0) / 100);
         const plannedPerKg = Number((item.plannedKgPerKgOutput ?? ratio).toFixed(6));
@@ -300,6 +340,7 @@ export const createProduct = async (req: Request, res: Response) => {
         return {
           recipe_id: recipe.id,
           material_id: item.materialId,
+          plate_type: plateType,
           quantity_kg: itemKg,
           percentage: pct,
           planned_kg_per_kg_output: plannedPerKg,
@@ -436,6 +477,8 @@ export const addRecipeVersion = async (req: Request, res: Response) => {
       notes: z.string().optional(),
       items: z.array(z.object({
         materialId: z.string().min(1),
+        plateType: z.string().optional(),
+        plate_type: z.string().optional(),
         quantityKg: z.coerce.number().min(0).optional(),
         percentage: z.coerce.number().min(0).optional(),
         plannedKgPerKgOutput: z.coerce.number().min(0).optional(),
@@ -466,6 +509,8 @@ export const addRecipeVersion = async (req: Request, res: Response) => {
 
       const recipeItems: InMemRecipeItem[] = body.items.map((i) => {
         const mat = inMemMaterials.find((m) => m.id === i.materialId);
+        const rawPlate = (i.plateType || i.plate_type || 'A').toUpperCase();
+        const plateType = (rawPlate === 'B' || rawPlate === 'C') ? rawPlate : 'A';
         const itemKg = Number(i.quantityKg ?? (i.plannedKgPerKgOutput ? i.plannedKgPerKgOutput * 100 : i.percentage) ?? 0);
         const ratio = totalKg > 0 ? (itemKg / totalKg) : (Number(i.percentage || 0) / 100);
         const plannedPerKg = Number((i.plannedKgPerKgOutput ?? ratio).toFixed(6));
@@ -475,6 +520,7 @@ export const addRecipeVersion = async (req: Request, res: Response) => {
           id: crypto.randomUUID(),
           recipe_id: newRecId,
           material_id: i.materialId,
+          plate_type: plateType,
           quantity_kg: itemKg,
           percentage: pct,
           planned_kg_per_kg_output: plannedPerKg,
@@ -534,6 +580,8 @@ export const addRecipeVersion = async (req: Request, res: Response) => {
     if (recError) throw recError;
 
     const items = body.items.map((i) => {
+      const rawPlate = (i.plateType || i.plate_type || 'A').toUpperCase();
+      const plateType = (rawPlate === 'B' || rawPlate === 'C') ? rawPlate : 'A';
       const itemKg = Number(i.quantityKg ?? (i.plannedKgPerKgOutput ? i.plannedKgPerKgOutput * 100 : i.percentage) ?? 0);
       const ratio = totalKg > 0 ? (itemKg / totalKg) : (Number(i.percentage || 0) / 100);
       const plannedPerKg = Number((i.plannedKgPerKgOutput ?? ratio).toFixed(6));
@@ -542,6 +590,7 @@ export const addRecipeVersion = async (req: Request, res: Response) => {
       return {
         recipe_id: newRecipe.id,
         material_id: i.materialId,
+        plate_type: plateType,
         quantity_kg: itemKg,
         percentage: pct,
         planned_kg_per_kg_output: plannedPerKg,
@@ -564,6 +613,7 @@ export interface MaterialRequirementDetail {
   material_id: string;
   material_code: string;
   material_name: string;
+  plate_type?: 'A' | 'B' | 'C' | string;
   quantity_kg?: number;
   percentage: number;
   planned_kg_per_kg_output: number;
@@ -580,6 +630,7 @@ export interface MaterialStockCheckResult {
   product_id?: string;
   planned_quantity_kg: number;
   requirements: MaterialRequirementDetail[];
+  plate_summary?: Record<string, { total_recipe_kg: number; required_kg: number; percentage: number }>;
   missingDetails?: string;
 }
 
@@ -599,6 +650,28 @@ export async function checkProductMaterialStock(
       requirements: [],
     };
   }
+
+  const buildPlatesSummary = (reqs: MaterialRequirementDetail[]) => {
+    const summary: Record<'A' | 'B' | 'C', { total_recipe_kg: number; required_kg: number; percentage: number }> = {
+      A: { total_recipe_kg: 0, required_kg: 0, percentage: 0 },
+      B: { total_recipe_kg: 0, required_kg: 0, percentage: 0 },
+      C: { total_recipe_kg: 0, required_kg: 0, percentage: 0 },
+    };
+
+    reqs.forEach((r) => {
+      const rawPlate = (r.plate_type || 'A').toUpperCase();
+      const p = (rawPlate === 'B' || rawPlate === 'C' ? rawPlate : 'A') as 'A' | 'B' | 'C';
+      summary[p].total_recipe_kg = Number((summary[p].total_recipe_kg + (r.quantity_kg || 0)).toFixed(2));
+      summary[p].required_kg = Number((summary[p].required_kg + r.required_kg).toFixed(2));
+    });
+
+    const totalReq = Object.values(summary).reduce((acc, s) => acc + s.required_kg, 0) || 1;
+    (['A', 'B', 'C'] as const).forEach((p) => {
+      summary[p].percentage = Number(((summary[p].required_kg / totalReq) * 100).toFixed(1));
+    });
+
+    return summary;
+  };
 
   if (!isSupabaseConfigured) {
     let foundRecipe: InMemRecipe | null = null;
@@ -643,6 +716,7 @@ export async function checkProductMaterialStock(
         material_id: item.material_id,
         material_code: item.materials?.code || mat?.code || 'MAT-RAW',
         material_name: item.materials?.name || mat?.name || 'Raw Material',
+        plate_type: item.plate_type || 'A',
         quantity_kg: Number(item.quantity_kg || item.percentage || Number((plannedPerKg * 100).toFixed(2))),
         percentage: Number(item.percentage || 0),
         planned_kg_per_kg_output: plannedPerKg,
@@ -665,6 +739,7 @@ export async function checkProductMaterialStock(
       product_id: resolvedProductId,
       planned_quantity_kg: qty,
       requirements,
+      plate_summary: buildPlatesSummary(requirements),
       missingDetails: missing.length > 0 ? missing.join('; ') : undefined,
     };
   }
@@ -679,7 +754,7 @@ export async function checkProductMaterialStock(
       .select(`
         id, version, product_id, is_active,
         product_recipe_items (
-          material_id, quantity_kg, percentage, planned_kg_per_kg_output,
+          material_id, plate_type, quantity_kg, percentage, planned_kg_per_kg_output,
           materials (id, code, name, standard_unit)
         )
       `)
@@ -694,7 +769,7 @@ export async function checkProductMaterialStock(
       .select(`
         id, version, product_id, is_active,
         product_recipe_items (
-          material_id, quantity_kg, percentage, planned_kg_per_kg_output,
+          material_id, plate_type, quantity_kg, percentage, planned_kg_per_kg_output,
           materials (id, code, name, standard_unit)
         )
       `)
@@ -736,6 +811,7 @@ export async function checkProductMaterialStock(
         material_id: item.material_id,
         material_code: item.materials?.code || 'MAT-RAW',
         material_name: item.materials?.name || 'Raw Material',
+        plate_type: item.plate_type || 'A',
         quantity_kg: Number(item.quantity_kg || item.percentage || Number((plannedPerKg * 100).toFixed(2))),
         percentage: Number(item.percentage || 0),
         planned_kg_per_kg_output: plannedPerKg,
@@ -759,6 +835,7 @@ export async function checkProductMaterialStock(
     product_id: resolvedProductId,
     planned_quantity_kg: qty,
     requirements,
+    plate_summary: buildPlatesSummary(requirements),
     missingDetails: missing.length > 0 ? missing.join('; ') : undefined,
   };
 }
@@ -855,10 +932,12 @@ export const seedDefaultProducts = async (req: Request, res: Response) => {
         // Build recipe items linking available materials
         const items: InMemRecipeItem[] = def.ratios.map((ratio, idx) => {
           const mat = availableMaterials[idx % Math.max(availableMaterials.length, 1)];
+          const plate = (['A', 'B', 'C'][idx % 3] || 'A') as 'A' | 'B' | 'C';
           return {
             id: crypto.randomUUID(),
             recipe_id: recId,
             material_id: mat?.id || `mat-${idx + 1}`,
+            plate_type: plate,
             quantity_kg: ratio.percent,
             percentage: ratio.percent,
             planned_kg_per_kg_output: ratio.perKg,
@@ -938,9 +1017,11 @@ export const seedDefaultProducts = async (req: Request, res: Response) => {
       if (!recErr && availableMaterials.length > 0) {
         const items = def.ratios.map((ratio, idx) => {
           const mat = availableMaterials[idx % availableMaterials.length];
+          const plate = ['A', 'B', 'C'][idx % 3] || 'A';
           return {
             recipe_id: rec.id,
             material_id: mat.id,
+            plate_type: plate,
             quantity_kg: ratio.percent,
             percentage: ratio.percent,
             planned_kg_per_kg_output: ratio.perKg,
