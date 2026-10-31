@@ -9,6 +9,9 @@ interface InMemRecipeItem {
   recipe_id: string;
   material_id: string;
   plate_type?: 'A' | 'B' | 'C' | string;
+  plate_a_kg?: number;
+  plate_b_kg?: number;
+  plate_c_kg?: number;
   quantity_kg?: number;
   percentage: number;
   planned_kg_per_kg_output: number;
@@ -22,21 +25,55 @@ export const computePlateSummary = (
   totalBatchKg?: number,
   orderKg: number = 0
 ) => {
-  // If first argument is an array of items (backward compatibility)
+  // If first argument is an array of items (polymer-wise items)
   if (Array.isArray(plateAOrItems)) {
     const items = plateAOrItems;
-    const total = items.reduce((sum, it) => sum + (Number(it.quantity_kg ?? it.percentage) || 0), 0) || 1;
-    // Default 3-plate split: 40% A (60kg), 26.7% B (40kg), 33.3% C (50kg) for 150kg batch
-    const aKg = Number((total * 0.4).toFixed(2));
-    const bKg = Number((total * (40 / 150)).toFixed(2));
-    const cKg = Number((total - aKg - bKg).toFixed(2));
-    const aFeed = orderKg > 0 ? Number((orderKg * 0.4).toFixed(2)) : aKg;
-    const bFeed = orderKg > 0 ? Number((orderKg * (40 / 150)).toFixed(2)) : bKg;
-    const cFeed = orderKg > 0 ? Number((orderKg * (50 / 150)).toFixed(2)) : cKg;
+    const hasPerItemPlates = items.some((it: any) => 
+      Number(it.plate_a_kg || 0) > 0 || Number(it.plate_b_kg || 0) > 0 || Number(it.plate_c_kg || 0)
+    );
+
+    let aKg = 0;
+    let bKg = 0;
+    let cKg = 0;
+    let countA = 0;
+    let countB = 0;
+    let countC = 0;
+
+    if (hasPerItemPlates) {
+      items.forEach((it: any) => {
+        const a = Number(it.plate_a_kg || 0);
+        const b = Number(it.plate_b_kg || 0);
+        const c = Number(it.plate_c_kg || 0);
+        if (a > 0) { aKg += a; countA++; }
+        if (b > 0) { bKg += b; countB++; }
+        if (c > 0) { cKg += c; countC++; }
+      });
+    } else {
+      items.forEach((it: any) => {
+        const rawPlate = (it.plate_type || 'A').toUpperCase();
+        const kg = Number(it.quantity_kg ?? it.percentage) || 0;
+        if (rawPlate === 'B') { bKg += kg; countB++; }
+        else if (rawPlate === 'C') { cKg += kg; countC++; }
+        else { aKg += kg; countA++; }
+      });
+    }
+
+    aKg = Number(aKg.toFixed(3));
+    bKg = Number(bKg.toFixed(3));
+    cKg = Number(cKg.toFixed(3));
+    const total = Number((aKg + bKg + cKg).toFixed(3)) || 1;
+    const aPct = Number(((aKg / total) * 100).toFixed(1));
+    const bPct = Number(((bKg / total) * 100).toFixed(1));
+    const cPct = Number(((cKg / total) * 100).toFixed(1));
+
+    const aFeed = orderKg > 0 ? Number((orderKg * (aPct / 100)).toFixed(2)) : aKg;
+    const bFeed = orderKg > 0 ? Number((orderKg * (bPct / 100)).toFixed(2)) : bKg;
+    const cFeed = orderKg > 0 ? Number((orderKg * (cPct / 100)).toFixed(2)) : cKg;
+
     return {
-      A: { total_kg: aKg, recipe_kg: aKg, total_recipe_kg: aKg, percentage: 40.0, feed_kg: aFeed, required_kg: aFeed, count: 1 },
-      B: { total_kg: bKg, recipe_kg: bKg, total_recipe_kg: bKg, percentage: 26.7, feed_kg: bFeed, required_kg: bFeed, count: 1 },
-      C: { total_kg: cKg, recipe_kg: cKg, total_recipe_kg: cKg, percentage: 33.3, feed_kg: cFeed, required_kg: cFeed, count: 1 },
+      A: { total_kg: aKg, recipe_kg: aKg, total_recipe_kg: aKg, percentage: aPct, feed_kg: aFeed, required_kg: aFeed, count: countA },
+      B: { total_kg: bKg, recipe_kg: bKg, total_recipe_kg: bKg, percentage: bPct, feed_kg: bFeed, required_kg: bFeed, count: countB },
+      C: { total_kg: cKg, recipe_kg: cKg, total_recipe_kg: cKg, percentage: cPct, feed_kg: cFeed, required_kg: cFeed, count: countC },
       total_batch_kg: total,
       total_plate_kg: total,
       is_balanced: true,
@@ -176,7 +213,7 @@ export const getProducts = async (req: Request, res: Response) => {
         product_recipes (
           id, version, is_active, notes, effective_date, plate_a_kg, plate_b_kg, plate_c_kg, total_batch_kg,
           product_recipe_items (
-            id, material_id, plate_type, quantity_kg, percentage, planned_kg_per_kg_output,
+            id, material_id, plate_type, plate_a_kg, plate_b_kg, plate_c_kg, quantity_kg, percentage, planned_kg_per_kg_output,
             materials (id, code, name, standard_unit)
           )
         )
@@ -228,7 +265,7 @@ export const getProducts = async (req: Request, res: Response) => {
               ...activeRecipe,
               recipe_cost_per_kg: Number(recipeCost.toFixed(2)),
               plate_summary: computePlateSummary(
-                activeRecipe.plate_a_kg,
+                activeRecipe.product_recipe_items || activeRecipe.plate_a_kg,
                 activeRecipe.plate_b_kg,
                 activeRecipe.plate_c_kg,
                 activeRecipe.total_batch_kg
@@ -271,6 +308,12 @@ export const createProduct = async (req: Request, res: Response) => {
           materialId: z.string().min(1),
           plateType: z.string().optional(),
           plate_type: z.string().optional(),
+          plateA_kg: z.coerce.number().min(0).optional(),
+          plateB_kg: z.coerce.number().min(0).optional(),
+          plateC_kg: z.coerce.number().min(0).optional(),
+          plate_a_kg: z.coerce.number().min(0).optional(),
+          plate_b_kg: z.coerce.number().min(0).optional(),
+          plate_c_kg: z.coerce.number().min(0).optional(),
           quantityKg: z.coerce.number().min(0).optional(),
           percentage: z.coerce.number().min(0).optional(),
           plannedKgPerKgOutput: z.coerce.number().min(0).optional(),
@@ -281,24 +324,34 @@ export const createProduct = async (req: Request, res: Response) => {
     const body = schema.parse(req.body);
     const generatedCode = body.code ? body.code.toUpperCase() : `PRD-${Math.floor(Math.random() * 9000 + 1000)}`;
 
-    // Validate that sum of plate inputs equals mixture total if recipe items are provided
-    if (body.initialRecipe && body.initialRecipe.items && body.initialRecipe.items.length > 0) {
-      const containerMixKg = body.initialRecipe.items.reduce(
-        (sum, it) => sum + (Number(it.quantityKg ?? it.percentage ?? (it.plannedKgPerKgOutput ? it.plannedKgPerKgOutput * 100 : 0)) || 0),
-        0
-      );
-      const plateA = Number(body.initialRecipe.plateA_kg ?? body.initialRecipe.plate_a_kg ?? 0);
-      const plateB = Number(body.initialRecipe.plateB_kg ?? body.initialRecipe.plate_b_kg ?? 0);
-      const plateC = Number(body.initialRecipe.plateC_kg ?? body.initialRecipe.plate_c_kg ?? 0);
-      const plateSum = Number((plateA + plateB + plateC).toFixed(3));
-      const roundedMix = Number(containerMixKg.toFixed(3));
+    let calculatedPlateA = 0;
+    let calculatedPlateB = 0;
+    let calculatedPlateC = 0;
+    let calculatedTotalKg = 0;
 
-      if (Math.abs(plateSum - roundedMix) > 0.05) {
-        return res.status(400).json({
-          success: false,
-          message: `Validation Error: Total machine plate inputs (Plate A: ${plateA} kg + Plate B: ${plateB} kg + Plate C: ${plateC} kg = ${plateSum} kg) must equal the master container mixture total (${roundedMix} kg). Please balance the plate split.`,
-        });
+    if (body.initialRecipe && body.initialRecipe.items && body.initialRecipe.items.length > 0) {
+      body.initialRecipe.items.forEach((it) => {
+        const a = Number(it.plateA_kg ?? it.plate_a_kg ?? 0);
+        const b = Number(it.plateB_kg ?? it.plate_b_kg ?? 0);
+        const c = Number(it.plateC_kg ?? it.plate_c_kg ?? 0);
+        calculatedPlateA += a;
+        calculatedPlateB += b;
+        calculatedPlateC += c;
+        const total = (a + b + c > 0) ? (a + b + c) : (Number(it.quantityKg ?? it.percentage) || 0);
+        calculatedTotalKg += total;
+      });
+
+      const hasItemPlates = (calculatedPlateA > 0 || calculatedPlateB > 0 || calculatedPlateC > 0);
+      if (!hasItemPlates) {
+        calculatedPlateA = Number(body.initialRecipe.plateA_kg ?? body.initialRecipe.plate_a_kg ?? 0);
+        calculatedPlateB = Number(body.initialRecipe.plateB_kg ?? body.initialRecipe.plate_b_kg ?? 0);
+        calculatedPlateC = Number(body.initialRecipe.plateC_kg ?? body.initialRecipe.plate_c_kg ?? 0);
       }
+
+      calculatedPlateA = Number(calculatedPlateA.toFixed(3));
+      calculatedPlateB = Number(calculatedPlateB.toFixed(3));
+      calculatedPlateC = Number(calculatedPlateC.toFixed(3));
+      calculatedTotalKg = Number((calculatedTotalKg > 0 ? calculatedTotalKg : (calculatedPlateA + calculatedPlateB + calculatedPlateC)).toFixed(3));
     }
 
     if (!isSupabaseConfigured) {
@@ -307,30 +360,27 @@ export const createProduct = async (req: Request, res: Response) => {
 
       let initialRecipes: InMemRecipe[] = [];
       if (body.initialRecipe) {
-        const totalKg = body.initialRecipe.items.reduce(
-          (sum, it) => sum + (Number(it.quantityKg ?? it.percentage ?? (it.plannedKgPerKgOutput ? it.plannedKgPerKgOutput * 100 : 0)) || 0),
-          0
-        ) || 1;
-
-        const plateA = Number(body.initialRecipe.plateA_kg ?? body.initialRecipe.plate_a_kg ?? 0);
-        const plateB = Number(body.initialRecipe.plateB_kg ?? body.initialRecipe.plate_b_kg ?? 0);
-        const plateC = Number(body.initialRecipe.plateC_kg ?? body.initialRecipe.plate_c_kg ?? 0);
-        const batchKg = Number(body.initialRecipe.totalBatchKg ?? body.initialRecipe.total_batch_kg ?? totalKg);
+        const batchKg = calculatedTotalKg || 1;
 
         const recipeItems: InMemRecipeItem[] = body.initialRecipe.items.map((i) => {
           const mat = inMemMaterials.find((m) => m.id === i.materialId);
-          const rawPlate = (i.plateType || i.plate_type || 'A').toUpperCase();
-          const plateType = (rawPlate === 'B' || rawPlate === 'C') ? rawPlate : 'A';
-          const itemKg = Number(i.quantityKg ?? (i.plannedKgPerKgOutput ? i.plannedKgPerKgOutput * 100 : i.percentage) ?? 0);
-          const ratio = totalKg > 0 ? (itemKg / totalKg) : (Number(i.percentage || 0) / 100);
+          const a = Number(i.plateA_kg ?? i.plate_a_kg ?? 0);
+          const b = Number(i.plateB_kg ?? i.plate_b_kg ?? 0);
+          const c = Number(i.plateC_kg ?? i.plate_c_kg ?? 0);
+          const itemKg = (a + b + c > 0) ? (a + b + c) : (Number(i.quantityKg ?? i.percentage) || 0);
+          const ratio = batchKg > 0 ? (itemKg / batchKg) : 0;
           const plannedPerKg = Number((i.plannedKgPerKgOutput ?? ratio).toFixed(6));
           const pct = Number((ratio * 100).toFixed(3));
+          const rawPlate = (i.plateType || i.plate_type || (a > 0 ? 'A' : (b > 0 ? 'B' : 'C'))).toUpperCase();
 
           return {
             id: crypto.randomUUID(),
             recipe_id: newRecipeId,
             material_id: i.materialId,
-            plate_type: plateType,
+            plate_type: rawPlate,
+            plate_a_kg: a,
+            plate_b_kg: b,
+            plate_c_kg: c,
             quantity_kg: itemKg,
             percentage: pct,
             planned_kg_per_kg_output: plannedPerKg,
@@ -348,9 +398,9 @@ export const createProduct = async (req: Request, res: Response) => {
             notes: body.initialRecipe.notes || 'Initial product BOM formulation',
             created_by: userId,
             effective_date: new Date().toISOString(),
-            plate_a_kg: plateA,
-            plate_b_kg: plateB,
-            plate_c_kg: plateC,
+            plate_a_kg: calculatedPlateA,
+            plate_b_kg: calculatedPlateB,
+            plate_c_kg: calculatedPlateC,
             total_batch_kg: batchKg,
             product_recipe_items: recipeItems,
           },
@@ -400,15 +450,7 @@ export const createProduct = async (req: Request, res: Response) => {
 
     // 2. Create version 1 recipe if supplied
     if (body.initialRecipe) {
-      const totalKg = body.initialRecipe.items.reduce(
-        (sum, it) => sum + (Number(it.quantityKg ?? it.percentage ?? (it.plannedKgPerKgOutput ? it.plannedKgPerKgOutput * 100 : 0)) || 0),
-        0
-      ) || 1;
-
-      const plateA = Number(body.initialRecipe.plateA_kg ?? body.initialRecipe.plate_a_kg ?? 0);
-      const plateB = Number(body.initialRecipe.plateB_kg ?? body.initialRecipe.plate_b_kg ?? 0);
-      const plateC = Number(body.initialRecipe.plateC_kg ?? body.initialRecipe.plate_c_kg ?? 0);
-      const batchKg = Number(body.initialRecipe.totalBatchKg ?? body.initialRecipe.total_batch_kg ?? totalKg);
+      const batchKg = calculatedTotalKg || 1;
 
       const { data: recipe, error: recError } = await supabase
         .from('product_recipes')
@@ -419,9 +461,9 @@ export const createProduct = async (req: Request, res: Response) => {
           is_active: true,
           notes: body.initialRecipe.notes,
           created_by: userId,
-          plate_a_kg: plateA,
-          plate_b_kg: plateB,
-          plate_c_kg: plateC,
+          plate_a_kg: calculatedPlateA,
+          plate_b_kg: calculatedPlateB,
+          plate_c_kg: calculatedPlateC,
           total_batch_kg: batchKg,
         })
         .select('*')
@@ -430,17 +472,22 @@ export const createProduct = async (req: Request, res: Response) => {
       if (recError) throw recError;
 
       const items = body.initialRecipe.items.map((item) => {
-        const rawPlate = (item.plateType || item.plate_type || 'A').toUpperCase();
-        const plateType = (rawPlate === 'B' || rawPlate === 'C') ? rawPlate : 'A';
-        const itemKg = Number(item.quantityKg ?? (item.plannedKgPerKgOutput ? item.plannedKgPerKgOutput * 100 : item.percentage) ?? 0);
-        const ratio = totalKg > 0 ? (itemKg / totalKg) : (Number(item.percentage || 0) / 100);
+        const a = Number(item.plateA_kg ?? item.plate_a_kg ?? 0);
+        const b = Number(item.plateB_kg ?? item.plate_b_kg ?? 0);
+        const c = Number(item.plateC_kg ?? item.plate_c_kg ?? 0);
+        const itemKg = (a + b + c > 0) ? (a + b + c) : (Number(item.quantityKg ?? item.percentage) || 0);
+        const ratio = batchKg > 0 ? (itemKg / batchKg) : 0;
         const plannedPerKg = Number((item.plannedKgPerKgOutput ?? ratio).toFixed(6));
         const pct = Number((ratio * 100).toFixed(3));
+        const rawPlate = (item.plateType || item.plate_type || (a > 0 ? 'A' : (b > 0 ? 'B' : 'C'))).toUpperCase();
 
         return {
           recipe_id: recipe.id,
           material_id: item.materialId,
-          plate_type: plateType,
+          plate_type: rawPlate,
+          plate_a_kg: a,
+          plate_b_kg: b,
+          plate_c_kg: c,
           quantity_kg: itemKg,
           percentage: pct,
           planned_kg_per_kg_output: plannedPerKg,
@@ -583,153 +630,178 @@ export const addRecipeVersion = async (req: Request, res: Response) => {
       plate_c_kg: z.coerce.number().min(0).optional(),
       totalBatchKg: z.coerce.number().min(0).optional(),
       total_batch_kg: z.coerce.number().min(0).optional(),
-      items: z.array(z.object({
-        materialId: z.string().min(1),
-        plateType: z.string().optional(),
-        plate_type: z.string().optional(),
-        quantityKg: z.coerce.number().min(0).optional(),
-        percentage: z.coerce.number().min(0).optional(),
-        plannedKgPerKgOutput: z.coerce.number().min(0).optional(),
-      })).min(1),
-    });
-
-    const body = schema.parse(req.body);
-
-    const containerMixKg = body.items.reduce(
-      (sum, it) => sum + (Number(it.quantityKg ?? it.percentage ?? (it.plannedKgPerKgOutput ? it.plannedKgPerKgOutput * 100 : 0)) || 0),
-      0
-    );
-
-    const plateA = Number(body.plateA_kg ?? body.plate_a_kg ?? 0);
-    const plateB = Number(body.plateB_kg ?? body.plate_b_kg ?? 0);
-    const plateC = Number(body.plateC_kg ?? body.plate_c_kg ?? 0);
-    const plateSum = Number((plateA + plateB + plateC).toFixed(3));
-    const roundedMix = Number(containerMixKg.toFixed(3));
-
-    if (Math.abs(plateSum - roundedMix) > 0.05) {
-      return res.status(400).json({
-        success: false,
-        message: `Validation Error: Total machine plate inputs (Plate A: ${plateA} kg + Plate B: ${plateB} kg + Plate C: ${plateC} kg = ${plateSum} kg) must equal the master container mixture total (${roundedMix} kg). Please balance the plate split.`,
+        items: z.array(z.object({
+          materialId: z.string().min(1),
+          plateType: z.string().optional(),
+          plate_type: z.string().optional(),
+          plateA_kg: z.coerce.number().min(0).optional(),
+          plateB_kg: z.coerce.number().min(0).optional(),
+          plateC_kg: z.coerce.number().min(0).optional(),
+          plate_a_kg: z.coerce.number().min(0).optional(),
+          plate_b_kg: z.coerce.number().min(0).optional(),
+          plate_c_kg: z.coerce.number().min(0).optional(),
+          quantityKg: z.coerce.number().min(0).optional(),
+          percentage: z.coerce.number().min(0).optional(),
+          plannedKgPerKgOutput: z.coerce.number().min(0).optional(),
+        })).min(1),
       });
-    }
 
-    const totalKg = containerMixKg || 1;
-    const batchKg = Number(body.totalBatchKg ?? body.total_batch_kg ?? totalKg);
+      const body = schema.parse(req.body);
 
-    if (!isSupabaseConfigured) {
-      const product = inMemProducts.find((p) => p.tenant_id === tenantId && p.id === productId);
-      if (!product) {
-        return res.status(404).json({ success: false, message: 'Product not found' });
+      let calculatedPlateA = 0;
+      let calculatedPlateB = 0;
+      let calculatedPlateC = 0;
+      let calculatedTotalKg = 0;
+
+      body.items.forEach((it) => {
+        const a = Number(it.plateA_kg ?? it.plate_a_kg ?? 0);
+        const b = Number(it.plateB_kg ?? it.plate_b_kg ?? 0);
+        const c = Number(it.plateC_kg ?? it.plate_c_kg ?? 0);
+        calculatedPlateA += a;
+        calculatedPlateB += b;
+        calculatedPlateC += c;
+        const total = (a + b + c > 0) ? (a + b + c) : (Number(it.quantityKg ?? it.percentage) || 0);
+        calculatedTotalKg += total;
+      });
+
+      const hasItemPlates = (calculatedPlateA > 0 || calculatedPlateB > 0 || calculatedPlateC > 0);
+      if (!hasItemPlates) {
+        calculatedPlateA = Number(body.plateA_kg ?? body.plate_a_kg ?? 0);
+        calculatedPlateB = Number(body.plateB_kg ?? body.plate_b_kg ?? 0);
+        calculatedPlateC = Number(body.plateC_kg ?? body.plate_c_kg ?? 0);
       }
 
+      calculatedPlateA = Number(calculatedPlateA.toFixed(3));
+      calculatedPlateB = Number(calculatedPlateB.toFixed(3));
+      calculatedPlateC = Number(calculatedPlateC.toFixed(3));
+      calculatedTotalKg = Number((calculatedTotalKg > 0 ? calculatedTotalKg : (calculatedPlateA + calculatedPlateB + calculatedPlateC)).toFixed(3));
+
+      const batchKg = Number(body.totalBatchKg ?? body.total_batch_kg ?? calculatedTotalKg) || 1;
+
+      if (!isSupabaseConfigured) {
+        const product = inMemProducts.find((p) => p.tenant_id === tenantId && p.id === productId);
+        if (!product) {
+          return res.status(404).json({ success: false, message: 'Product not found' });
+        }
+
+        // Deactivate prior versions
+        const currentRecipes = product.product_recipes || [];
+        currentRecipes.forEach((r) => {
+          r.is_active = false;
+        });
+
+        const nextVersion = currentRecipes.length + 1;
+        const newRecId = crypto.randomUUID();
+
+        const recipeItems: InMemRecipeItem[] = body.items.map((i) => {
+          const mat = inMemMaterials.find((m) => m.id === i.materialId);
+          const a = Number(i.plateA_kg ?? i.plate_a_kg ?? 0);
+          const b = Number(i.plateB_kg ?? i.plate_b_kg ?? 0);
+          const c = Number(i.plateC_kg ?? i.plate_c_kg ?? 0);
+          const itemKg = (a + b + c > 0) ? (a + b + c) : (Number(i.quantityKg ?? i.percentage) || 0);
+          const ratio = batchKg > 0 ? (itemKg / batchKg) : 0;
+          const plannedPerKg = Number((i.plannedKgPerKgOutput ?? ratio).toFixed(6));
+          const pct = Number((ratio * 100).toFixed(3));
+          const rawPlate = (i.plateType || i.plate_type || (a > 0 ? 'A' : (b > 0 ? 'B' : 'C'))).toUpperCase();
+
+          return {
+            id: crypto.randomUUID(),
+            recipe_id: newRecId,
+            material_id: i.materialId,
+            plate_type: rawPlate,
+            plate_a_kg: a,
+            plate_b_kg: b,
+            plate_c_kg: c,
+            quantity_kg: itemKg,
+            percentage: pct,
+            planned_kg_per_kg_output: plannedPerKg,
+            materials: mat ? { id: mat.id, code: mat.code, name: mat.name, standard_unit: mat.standard_unit } : undefined,
+          };
+        });
+
+        const newRecipe: InMemRecipe = {
+          id: newRecId,
+          tenant_id: tenantId,
+          product_id: productId,
+          version: nextVersion,
+          is_active: true,
+          notes: body.notes || `Recipe Version ${nextVersion}`,
+          created_by: userId,
+          effective_date: new Date().toISOString(),
+          plate_a_kg: calculatedPlateA,
+          plate_b_kg: calculatedPlateB,
+          plate_c_kg: calculatedPlateC,
+          total_batch_kg: batchKg,
+          product_recipe_items: recipeItems,
+        };
+
+        currentRecipes.unshift(newRecipe);
+        product.product_recipes = currentRecipes;
+
+        return res.status(201).json({ success: true, recipe: newRecipe, version: nextVersion });
+      }
+
+      // Get max version
+      const { data: existingRecipes } = await supabase
+        .from('product_recipes')
+        .select('version')
+        .eq('product_id', productId)
+        .eq('tenant_id', tenantId)
+        .order('version', { ascending: false });
+
+      const nextVersion = (existingRecipes?.[0]?.version || 0) + 1;
+
       // Deactivate prior versions
-      const currentRecipes = product.product_recipes || [];
-      currentRecipes.forEach((r) => {
-        r.is_active = false;
-      });
+      await supabase
+        .from('product_recipes')
+        .update({ is_active: false })
+        .eq('product_id', productId)
+        .eq('tenant_id', tenantId);
 
-      const nextVersion = currentRecipes.length + 1;
-      const newRecId = crypto.randomUUID();
+      // Insert new version
+      const { data: newRecipe, error: recError } = await supabase
+        .from('product_recipes')
+        .insert({
+          tenant_id: tenantId,
+          product_id: productId,
+          version: nextVersion,
+          is_active: true,
+          notes: body.notes,
+          created_by: userId,
+          plate_a_kg: calculatedPlateA,
+          plate_b_kg: calculatedPlateB,
+          plate_c_kg: calculatedPlateC,
+          total_batch_kg: batchKg,
+        })
+        .select('*')
+        .single();
 
-      const recipeItems: InMemRecipeItem[] = body.items.map((i) => {
-        const mat = inMemMaterials.find((m) => m.id === i.materialId);
-        const rawPlate = (i.plateType || i.plate_type || 'A').toUpperCase();
-        const plateType = (rawPlate === 'B' || rawPlate === 'C') ? rawPlate : 'A';
-        const itemKg = Number(i.quantityKg ?? (i.plannedKgPerKgOutput ? i.plannedKgPerKgOutput * 100 : i.percentage) ?? 0);
-        const ratio = totalKg > 0 ? (itemKg / totalKg) : (Number(i.percentage || 0) / 100);
+      if (recError) throw recError;
+
+      const items = body.items.map((i) => {
+        const a = Number(i.plateA_kg ?? i.plate_a_kg ?? 0);
+        const b = Number(i.plateB_kg ?? i.plate_b_kg ?? 0);
+        const c = Number(i.plateC_kg ?? i.plate_c_kg ?? 0);
+        const itemKg = (a + b + c > 0) ? (a + b + c) : (Number(i.quantityKg ?? i.percentage) || 0);
+        const ratio = batchKg > 0 ? (itemKg / batchKg) : 0;
         const plannedPerKg = Number((i.plannedKgPerKgOutput ?? ratio).toFixed(6));
         const pct = Number((ratio * 100).toFixed(3));
+        const rawPlate = (i.plateType || i.plate_type || (a > 0 ? 'A' : (b > 0 ? 'B' : 'C'))).toUpperCase();
 
         return {
-          id: crypto.randomUUID(),
-          recipe_id: newRecId,
+          recipe_id: newRecipe.id,
           material_id: i.materialId,
-          plate_type: plateType,
+          plate_type: rawPlate,
+          plate_a_kg: a,
+          plate_b_kg: b,
+          plate_c_kg: c,
           quantity_kg: itemKg,
           percentage: pct,
           planned_kg_per_kg_output: plannedPerKg,
-          materials: mat ? { id: mat.id, code: mat.code, name: mat.name, standard_unit: mat.standard_unit } : undefined,
         };
       });
 
-      const newRecipe: InMemRecipe = {
-        id: newRecId,
-        tenant_id: tenantId,
-        product_id: productId,
-        version: nextVersion,
-        is_active: true,
-        notes: body.notes || `Recipe Version ${nextVersion}`,
-        created_by: userId,
-        effective_date: new Date().toISOString(),
-        plate_a_kg: plateA,
-        plate_b_kg: plateB,
-        plate_c_kg: plateC,
-        total_batch_kg: batchKg,
-        product_recipe_items: recipeItems,
-      };
-
-      currentRecipes.unshift(newRecipe);
-      product.product_recipes = currentRecipes;
-
-      return res.status(201).json({ success: true, recipe: newRecipe, version: nextVersion });
-    }
-
-    // Get max version
-    const { data: existingRecipes } = await supabase
-      .from('product_recipes')
-      .select('version')
-      .eq('product_id', productId)
-      .eq('tenant_id', tenantId)
-      .order('version', { ascending: false });
-
-    const nextVersion = (existingRecipes?.[0]?.version || 0) + 1;
-
-    // Deactivate prior versions
-    await supabase
-      .from('product_recipes')
-      .update({ is_active: false })
-      .eq('product_id', productId)
-      .eq('tenant_id', tenantId);
-
-    // Insert new version
-    const { data: newRecipe, error: recError } = await supabase
-      .from('product_recipes')
-      .insert({
-        tenant_id: tenantId,
-        product_id: productId,
-        version: nextVersion,
-        is_active: true,
-        notes: body.notes,
-        created_by: userId,
-        plate_a_kg: plateA,
-        plate_b_kg: plateB,
-        plate_c_kg: plateC,
-        total_batch_kg: batchKg,
-      })
-      .select('*')
-      .single();
-
-    if (recError) throw recError;
-
-    const items = body.items.map((i) => {
-      const rawPlate = (i.plateType || i.plate_type || 'A').toUpperCase();
-      const plateType = (rawPlate === 'B' || rawPlate === 'C') ? rawPlate : 'A';
-      const itemKg = Number(i.quantityKg ?? (i.plannedKgPerKgOutput ? i.plannedKgPerKgOutput * 100 : i.percentage) ?? 0);
-      const ratio = totalKg > 0 ? (itemKg / totalKg) : (Number(i.percentage || 0) / 100);
-      const plannedPerKg = Number((i.plannedKgPerKgOutput ?? ratio).toFixed(6));
-      const pct = Number((ratio * 100).toFixed(3));
-
-      return {
-        recipe_id: newRecipe.id,
-        material_id: i.materialId,
-        plate_type: plateType,
-        quantity_kg: itemKg,
-        percentage: pct,
-        planned_kg_per_kg_output: plannedPerKg,
-      };
-    });
-
-    await supabase.from('product_recipe_items').insert(items);
+      await supabase.from('product_recipe_items').insert(items);
 
     return res.status(201).json({ success: true, recipe: newRecipe, version: nextVersion });
   } catch (error: any) {
@@ -849,6 +921,9 @@ export async function checkProductMaterialStock(
         material_code: item.materials?.code || mat?.code || 'MAT-RAW',
         material_name: item.materials?.name || mat?.name || 'Raw Material',
         plate_type: item.plate_type || 'A',
+        plate_a_kg: Number(item.plate_a_kg || 0),
+        plate_b_kg: Number(item.plate_b_kg || 0),
+        plate_c_kg: Number(item.plate_c_kg || 0),
         quantity_kg: Number(item.quantity_kg || item.percentage || Number((plannedPerKg * 100).toFixed(2))),
         percentage: Number(item.percentage || 0),
         planned_kg_per_kg_output: plannedPerKg,
@@ -872,7 +947,7 @@ export async function checkProductMaterialStock(
       planned_quantity_kg: qty,
       requirements,
       plate_summary: computePlateSummary(
-        foundRecipe.plate_a_kg,
+        foundRecipe.product_recipe_items || foundRecipe.plate_a_kg,
         foundRecipe.plate_b_kg,
         foundRecipe.plate_c_kg,
         foundRecipe.total_batch_kg,
@@ -892,7 +967,7 @@ export async function checkProductMaterialStock(
       .select(`
         id, version, product_id, is_active, plate_a_kg, plate_b_kg, plate_c_kg, total_batch_kg,
         product_recipe_items (
-          material_id, plate_type, quantity_kg, percentage, planned_kg_per_kg_output,
+          material_id, plate_type, plate_a_kg, plate_b_kg, plate_c_kg, quantity_kg, percentage, planned_kg_per_kg_output,
           materials (id, code, name, standard_unit)
         )
       `)
@@ -907,7 +982,7 @@ export async function checkProductMaterialStock(
       .select(`
         id, version, product_id, is_active, plate_a_kg, plate_b_kg, plate_c_kg, total_batch_kg,
         product_recipe_items (
-          material_id, plate_type, quantity_kg, percentage, planned_kg_per_kg_output,
+          material_id, plate_type, plate_a_kg, plate_b_kg, plate_c_kg, quantity_kg, percentage, planned_kg_per_kg_output,
           materials (id, code, name, standard_unit)
         )
       `)
@@ -950,6 +1025,9 @@ export async function checkProductMaterialStock(
         material_code: item.materials?.code || 'MAT-RAW',
         material_name: item.materials?.name || 'Raw Material',
         plate_type: item.plate_type || 'A',
+        plate_a_kg: Number(item.plate_a_kg || 0),
+        plate_b_kg: Number(item.plate_b_kg || 0),
+        plate_c_kg: Number(item.plate_c_kg || 0),
         quantity_kg: Number(item.quantity_kg || item.percentage || Number((plannedPerKg * 100).toFixed(2))),
         percentage: Number(item.percentage || 0),
         planned_kg_per_kg_output: plannedPerKg,
@@ -974,7 +1052,7 @@ export async function checkProductMaterialStock(
     planned_quantity_kg: qty,
     requirements,
     plate_summary: computePlateSummary(
-      recipe.plate_a_kg,
+      recipe.product_recipe_items || recipe.plate_a_kg,
       recipe.plate_b_kg,
       recipe.plate_c_kg,
       recipe.total_batch_kg,
