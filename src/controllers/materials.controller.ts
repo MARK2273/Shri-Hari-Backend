@@ -55,12 +55,37 @@ export let inMemMaterials: InMemMaterial[] = mockStore.materials;
 export let inMemBatches: InMemBatch[] = mockStore.batches;
 export let inMemSuppliers: InMemSupplier[] = mockStore.suppliers || [];
 
-const getTenantId = (req: Request): string => (req.tenantId || process.env.DEFAULT_TENANT_SLUG || 'shri-hari-pack') as string;
+const isUUID = (val: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val);
+let cachedTenantUUID: string | null = null;
+
+const getTenantId = async (req: Request): Promise<string> => {
+  const raw = (req.tenantId || process.env.DEFAULT_TENANT_SLUG || 'shri-hari-pack') as string;
+  if (!isSupabaseConfigured) return raw;
+  if (isUUID(raw)) return raw;
+  if (cachedTenantUUID) return cachedTenantUUID;
+
+  try {
+    const { data } = await supabase
+      .from('tenants')
+      .select('id')
+      .or(`tenant_id.eq.${raw},name.ilike.%shri%`)
+      .limit(1)
+      .maybeSingle();
+
+    if (data?.id) {
+      cachedTenantUUID = data.id;
+      return data.id;
+    }
+  } catch (err) {
+    console.warn('[MATERIALS] Error resolving tenant UUID from slug:', err);
+  }
+  return '0f866809-06c3-4771-8b93-4f2253c9b6b1';
+};
 
 // List materials with total aggregated stock across active batches
 export const getMaterials = async (req: Request, res: Response) => {
   try {
-    const tenantId = getTenantId(req);
+    const tenantId = await getTenantId(req);
 
     if (!isSupabaseConfigured) {
       const tenantMaterials = inMemMaterials.filter((m) => m.tenant_id === tenantId);
@@ -237,7 +262,7 @@ export const getMaterials = async (req: Request, res: Response) => {
 // Create new plastic material type (INV-01, INV-02)
 export const createMaterial = async (req: Request, res: Response) => {
   try {
-    const tenantId = getTenantId(req);
+    const tenantId = await getTenantId(req);
     const schema = z.object({
       code: z.string().optional(),
       name: z.string().min(2),
@@ -306,7 +331,7 @@ export const createMaterial = async (req: Request, res: Response) => {
 // Update existing material type
 export const updateMaterial = async (req: Request, res: Response) => {
   try {
-    const tenantId = getTenantId(req);
+    const tenantId = await getTenantId(req);
     const { id } = req.params;
 
     const schema = z.object({
@@ -363,7 +388,7 @@ export const updateMaterial = async (req: Request, res: Response) => {
 // Delete material type (checks for linked batches first)
 export const deleteMaterial = async (req: Request, res: Response) => {
   try {
-    const tenantId = getTenantId(req);
+    const tenantId = await getTenantId(req);
     const { id } = req.params;
 
     if (!isSupabaseConfigured) {
@@ -416,7 +441,7 @@ export const deleteMaterial = async (req: Request, res: Response) => {
 // Seed standard industry plastic polymers for packaging
 export const seedDefaultMaterials = async (req: Request, res: Response) => {
   try {
-    const tenantId = getTenantId(req);
+    const tenantId = await getTenantId(req);
 
     const defaults = [
       {
@@ -506,7 +531,7 @@ export const seedDefaultMaterials = async (req: Request, res: Response) => {
 // List material batches with filters and FIFO sorting (INV-04, INV-06)
 export const getMaterialBatches = async (req: Request, res: Response) => {
   try {
-    const tenantId = getTenantId(req);
+    const tenantId = await getTenantId(req);
     const { materialId, status } = req.query;
 
     if (!isSupabaseConfigured) {
@@ -554,7 +579,7 @@ export const getMaterialBatches = async (req: Request, res: Response) => {
 // List raw material suppliers / vendors
 export const getSuppliers = async (req: Request, res: Response) => {
   try {
-    const tenantId = getTenantId(req);
+    const tenantId = await getTenantId(req);
 
     if (!isSupabaseConfigured) {
       const list = inMemSuppliers.filter((s) => s.tenant_id === tenantId);
@@ -577,7 +602,7 @@ export const getSuppliers = async (req: Request, res: Response) => {
 // Create new supplier / vendor master entry
 export const createSupplier = async (req: Request, res: Response) => {
   try {
-    const tenantId = getTenantId(req);
+    const tenantId = await getTenantId(req);
     const schema = z.object({
       name: z.string().min(2, 'Vendor/Supplier name is required'),
       code: z.string().optional(),
@@ -653,7 +678,7 @@ export const createSupplier = async (req: Request, res: Response) => {
 // Update supplier / vendor master entry
 export const updateSupplier = async (req: Request, res: Response) => {
   try {
-    const tenantId = getTenantId(req);
+    const tenantId = await getTenantId(req);
     const { id } = req.params;
 
     const schema = z.object({
@@ -719,7 +744,7 @@ export const updateSupplier = async (req: Request, res: Response) => {
 // Delete supplier / vendor
 export const deleteSupplier = async (req: Request, res: Response) => {
   try {
-    const tenantId = getTenantId(req);
+    const tenantId = await getTenantId(req);
     const { id } = req.params;
 
     if (!isSupabaseConfigured) {
@@ -749,8 +774,8 @@ export const deleteSupplier = async (req: Request, res: Response) => {
 // Receive new raw material lot / batch (INV-03, INV-04, INV-07)
 export const receiveMaterialBatch = async (req: Request, res: Response) => {
   try {
-    const tenantId = getTenantId(req);
-    const userId = req.user?.id;
+    const tenantId = await getTenantId(req);
+    const userId = req.user?.id && isUUID(req.user.id) ? req.user.id : null;
 
     const singleItemSchema = z.object({
       materialId: z.string().min(1),
@@ -775,6 +800,9 @@ export const receiveMaterialBatch = async (req: Request, res: Response) => {
           materialId: z.string().min(1, 'Please select a plastic material'),
           receivedQuantityKg: z.number().positive('Received weight must be greater than 0'),
           costPerKg: z.number().positive({ message: 'Cost per KG must be greater than 0' }),
+          supplierId: z.string().optional().nullable(),
+          supplierName: z.string().optional().nullable(),
+          receiptDate: z.string().optional().nullable(),
           supplierLotNumber: z.string().optional().nullable(),
           batchNumber: z.string().optional(),
           notes: z.string().optional(),
@@ -812,13 +840,19 @@ export const receiveMaterialBatch = async (req: Request, res: Response) => {
         const lotNum = it.supplierLotNumber?.trim() || headerInvoice || null;
         const combinedNotes = [it.notes?.trim(), headerNotes].filter(Boolean).join(' | ');
 
+        const finalSupplierId = it.supplierId !== undefined ? (it.supplierId || null) : headerSupplierId;
+        const finalSupplierName = it.supplierName !== undefined && it.supplierName !== null 
+          ? (it.supplierName.trim() || null) 
+          : headerSupplierName;
+        const finalReceiptDate = it.receiptDate?.trim() || headerReceiptDate;
+
         return {
           materialId: it.materialId,
-          supplierId: headerSupplierId,
-          supplierName: headerSupplierName,
+          supplierId: finalSupplierId,
+          supplierName: finalSupplierName,
           batchNumber: bNum,
           supplierLotNumber: lotNum,
-          receiptDate: headerReceiptDate,
+          receiptDate: finalReceiptDate,
           receivedQuantityKg: it.receivedQuantityKg,
           costPerKg: it.costPerKg,
           notes: combinedNotes,
@@ -853,11 +887,35 @@ export const receiveMaterialBatch = async (req: Request, res: Response) => {
           return res.status(404).json({ success: false, message: `Plastic material ${item.materialId} not found.` });
         }
 
+        // Auto-resolve or create supplier if supplierName is given without ID
+        let resolvedSupplierId = item.supplierId;
+        if (!resolvedSupplierId && item.supplierName) {
+          const matchSup = inMemSuppliers.find(
+            (s) => s.tenant_id === tenantId && s.name.toLowerCase() === item.supplierName!.trim().toLowerCase()
+          );
+          if (matchSup) {
+            resolvedSupplierId = matchSup.id;
+          } else {
+            const newSup: InMemSupplier = {
+              id: crypto.randomUUID(),
+              tenant_id: tenantId,
+              code: `SUP-${Math.floor(Math.random() * 9000 + 1000)}`,
+              name: item.supplierName.trim(),
+              is_active: true,
+              created_at: new Date().toISOString(),
+              updated_at: new Date().toISOString(),
+            };
+            inMemSuppliers.push(newSup);
+            mockStore.suppliers = inMemSuppliers;
+            resolvedSupplierId = newSup.id;
+          }
+        }
+
         const newBatch: InMemBatch = {
           id: crypto.randomUUID(),
           tenant_id: tenantId,
           material_id: item.materialId,
-          supplier_id: item.supplierId,
+          supplier_id: resolvedSupplierId,
           supplier_name: item.supplierName,
           batch_number: item.batchNumber,
           supplier_lot_number: item.supplierLotNumber,
@@ -867,7 +925,7 @@ export const receiveMaterialBatch = async (req: Request, res: Response) => {
           cost_per_kg: item.costPerKg,
           status: 'available',
           notes: item.notes,
-          created_by: userId,
+          created_by: userId || undefined,
           created_at: new Date().toISOString(),
         };
 
@@ -889,12 +947,42 @@ export const receiveMaterialBatch = async (req: Request, res: Response) => {
     // 1. Create the material batches in Supabase
     const createdBatches: any[] = [];
     for (const item of itemsToProcess) {
+      let resolvedSupplierId = item.supplierId;
+      if (!resolvedSupplierId && item.supplierName) {
+        const { data: existingSup } = await supabase
+          .from('suppliers')
+          .select('id')
+          .eq('tenant_id', tenantId)
+          .ilike('name', item.supplierName.trim())
+          .maybeSingle();
+
+        if (existingSup) {
+          resolvedSupplierId = existingSup.id;
+        } else {
+          const supCode = `SUP-${Math.floor(Math.random() * 9000 + 1000)}`;
+          const { data: newSup } = await supabase
+            .from('suppliers')
+            .insert({
+              tenant_id: tenantId,
+              code: supCode,
+              name: item.supplierName.trim(),
+              is_active: true,
+            })
+            .select('id')
+            .maybeSingle();
+
+          if (newSup) {
+            resolvedSupplierId = newSup.id;
+          }
+        }
+      }
+
       const { data: batch, error: batchError } = await supabase
         .from('material_batches')
         .insert({
           tenant_id: tenantId,
           material_id: item.materialId,
-          supplier_id: item.supplierId,
+          supplier_id: resolvedSupplierId,
           supplier_name: item.supplierName,
           batch_number: item.batchNumber,
           supplier_lot_number: item.supplierLotNumber,
@@ -954,8 +1042,8 @@ export const receiveMaterialBatch = async (req: Request, res: Response) => {
 // Adjust stock / corrections (INV-11)
 export const adjustBatchStock = async (req: Request, res: Response) => {
   try {
-    const tenantId = getTenantId(req);
-    const userId = req.user?.id;
+    const tenantId = await getTenantId(req);
+    const userId = req.user?.id && isUUID(req.user.id) ? req.user.id : null;
     const { batchId } = req.params;
 
     const schema = z.object({
