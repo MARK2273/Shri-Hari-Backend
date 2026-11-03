@@ -256,8 +256,7 @@ CREATE TABLE customer_order_items (
     selling_price_per_kg NUMERIC(12, 2) DEFAULT 0.00,
     recipe_cost_per_kg NUMERIC(12, 2) DEFAULT 0.00,
     notes TEXT,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    CONSTRAINT uq_order_product_item UNIQUE (order_id, product_id)
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
 -- ==============================================================================

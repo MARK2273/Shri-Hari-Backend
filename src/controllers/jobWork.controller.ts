@@ -1,13 +1,138 @@
 import { Request, Response } from 'express';
 import { supabase, isSupabaseConfigured } from '../config/supabase';
 import { mockStore, saveMockStore, recordAuditLog } from '../utils/mockStore';
-import { inMemBatches, inMemMaterials } from './materials.controller';
+import { inMemBatches, inMemMaterials, inMemSuppliers } from './materials.controller';
 import { inMemProducts } from './products.controller';
 import { inMemCustomers } from './orders.controller';
 import { inMemFGBatches, InMemFGBatch } from './finishedGoods.controller';
 
-const getTenantId = (req: Request): string =>
-  (req.tenantId || process.env.DEFAULT_TENANT_SLUG || 'shri-hari-pack') as string;
+const isUUID = (val: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val);
+let cachedTenantUUID: string | null = null;
+
+const getTenantId = async (req: Request): Promise<string> => {
+  const raw = (req.tenantId || process.env.DEFAULT_TENANT_SLUG || 'shri-hari-pack') as string;
+  if (!isSupabaseConfigured) return raw;
+  if (isUUID(raw)) return raw;
+  if (cachedTenantUUID) return cachedTenantUUID;
+
+  try {
+    const { data } = await supabase
+      .from('tenants')
+      .select('id')
+      .or(`tenant_id.eq.${raw},name.ilike.%shri%`)
+      .limit(1)
+      .maybeSingle();
+
+    if (data?.id) {
+      cachedTenantUUID = data.id;
+      return data.id;
+    }
+  } catch (err) {
+    console.warn('[JOB_WORK] Error resolving tenant UUID from slug:', err);
+  }
+  return '0f866809-06c3-4771-8b93-4f2253c9b6b1';
+};
+
+// Helper: Fetch all external processors & suppliers across Supabase and inMem
+async function fetchWorkersAndSuppliers(tenantId: string): Promise<any[]> {
+  const list: any[] = [];
+  const seenIds = new Set<string>();
+  const seenNames = new Set<string>();
+
+  // 1. Fetch suppliers/vendors from Supabase if configured
+  if (isSupabaseConfigured && supabase) {
+    try {
+      const { data, error } = await supabase
+        .from('suppliers')
+        .select('*')
+        .eq('tenant_id', tenantId)
+        .order('name');
+
+      if (!error && data) {
+        for (const s of data) {
+          seenIds.add(s.id);
+          seenNames.add(s.name.trim().toLowerCase());
+          list.push({
+            id: s.id,
+            tenant_id: s.tenant_id,
+            code: s.code,
+            name: s.name,
+            contact_person: s.contact_person || '',
+            phone: s.phone || '',
+            email: s.email || '',
+            address: s.address || '',
+            is_active: s.is_active ?? true,
+            created_at: s.created_at,
+          });
+        }
+      }
+    } catch (err) {
+      console.warn('[JOB_WORK] Error querying Supabase suppliers:', err);
+    }
+  }
+
+  // 2. Include suppliers from inMemSuppliers / mockStore.suppliers
+  const memSuppliers = (mockStore.suppliers || inMemSuppliers || []).filter(
+    (s: any) => !s.tenant_id || s.tenant_id === tenantId || s.tenant_id === 'shri-hari-pack'
+  );
+  for (const s of memSuppliers) {
+    if (!seenIds.has(s.id) && !seenNames.has(s.name?.trim().toLowerCase())) {
+      seenIds.add(s.id);
+      seenNames.add(s.name.trim().toLowerCase());
+      list.push({
+        id: s.id,
+        tenant_id: s.tenant_id,
+        code: s.code,
+        name: s.name,
+        contact_person: s.contact_person || '',
+        phone: s.phone || '',
+        email: s.email || '',
+        address: s.address || '',
+        is_active: s.is_active ?? true,
+        created_at: s.created_at,
+      });
+    }
+  }
+
+  // 3. Include job workers from mockStore.jobWorkers
+  const memWorkers = (mockStore.jobWorkers || []).filter(
+    (w: any) => !w.tenant_id || w.tenant_id === tenantId || w.tenant_id === 'shri-hari-pack'
+  );
+  for (const w of memWorkers) {
+    if (!seenIds.has(w.id) && !seenNames.has(w.name?.trim().toLowerCase())) {
+      seenIds.add(w.id);
+      seenNames.add(w.name.trim().toLowerCase());
+      list.push(w);
+    }
+  }
+
+  return list;
+}
+
+// Helper: Find job worker or supplier by ID across Supabase and inMem
+async function findJobWorkerOrSupplier(vendorId: string, tenantId: string): Promise<any | null> {
+  const fromMock = (mockStore.jobWorkers || []).find((w: any) => w.id === vendorId);
+  if (fromMock) return fromMock;
+
+  const fromMockSup = (mockStore.suppliers || inMemSuppliers || []).find((s: any) => s.id === vendorId);
+  if (fromMockSup) return fromMockSup;
+
+  if (isSupabaseConfigured && supabase) {
+    try {
+      const { data, error } = await supabase
+        .from('suppliers')
+        .select('*')
+        .eq('id', vendorId)
+        .maybeSingle();
+
+      if (!error && data) return data;
+    } catch (err) {
+      console.warn('[JOB_WORK] Error finding supplier in Supabase:', err);
+    }
+  }
+
+  return null;
+}
 
 // Helper: Find material across Supabase and inMem
 async function findMaterial(materialId: string, tenantId: string) {
@@ -126,10 +251,8 @@ async function findCustomer(customerId: string, tenantId: string) {
 // 1. GET & CREATE Job Workers (Vendors/Processors)
 export const getJobWorkers = async (req: Request, res: Response) => {
   try {
-    const tenantId = getTenantId(req);
-    const workers = (mockStore.jobWorkers || []).filter(
-      (w) => !w.tenant_id || w.tenant_id === tenantId || w.tenant_id === 'shri-hari-pack'
-    );
+    const tenantId = await getTenantId(req);
+    const workers = await fetchWorkersAndSuppliers(tenantId);
     res.json({ success: true, workers });
   } catch (err: any) {
     res.status(500).json({ error: 'Failed to fetch job workers', message: err.message });
@@ -138,31 +261,82 @@ export const getJobWorkers = async (req: Request, res: Response) => {
 
 export const createJobWorker = async (req: Request, res: Response) => {
   try {
-    const tenantId = getTenantId(req);
+    const tenantId = await getTenantId(req);
     const { name, contactPerson, phone, email, address } = req.body;
 
     if (!name?.trim()) {
       return res.status(400).json({ error: 'Job worker name is required' });
     }
 
-    const newWorker = {
-      id: `jw-${Date.now()}`,
-      tenant_id: tenantId,
-      name: name.trim(),
-      contact_person: contactPerson?.trim() || '',
-      phone: phone?.trim() || '',
-      email: email?.trim() || '',
-      address: address?.trim() || '',
-      is_active: true,
-      created_at: new Date().toISOString(),
-    };
+    let createdWorker: any = null;
+
+    // 1. If Supabase is configured, insert into suppliers table so it persists in DB
+    if (isSupabaseConfigured && supabase) {
+      try {
+        const code = `PRC-${Math.floor(1000 + Math.random() * 9000)}`;
+        const { data, error } = await supabase
+          .from('suppliers')
+          .insert({
+            tenant_id: tenantId,
+            code,
+            name: name.trim(),
+            contact_person: contactPerson?.trim() || null,
+            phone: phone?.trim() || null,
+            email: email?.trim() || null,
+            address: address?.trim() || null,
+            is_active: true,
+          })
+          .select('*')
+          .single();
+
+        if (!error && data) {
+          createdWorker = {
+            id: data.id,
+            tenant_id: data.tenant_id,
+            code: data.code,
+            name: data.name,
+            contact_person: data.contact_person || '',
+            phone: data.phone || '',
+            email: data.email || '',
+            address: data.address || '',
+            is_active: data.is_active ?? true,
+            created_at: data.created_at,
+          };
+        } else {
+          console.warn('[JOB_WORK] Supabase insert error, falling back to mockStore:', error);
+        }
+      } catch (dbErr) {
+        console.warn('[JOB_WORK] Supabase worker insert exception:', dbErr);
+      }
+    }
+
+    if (!createdWorker) {
+      createdWorker = {
+        id: `jw-${Date.now()}`,
+        tenant_id: tenantId,
+        code: `PRC-${Math.floor(1000 + Math.random() * 9000)}`,
+        name: name.trim(),
+        contact_person: contactPerson?.trim() || '',
+        phone: phone?.trim() || '',
+        email: email?.trim() || '',
+        address: address?.trim() || '',
+        is_active: true,
+        created_at: new Date().toISOString(),
+      };
+    }
 
     if (!mockStore.jobWorkers) mockStore.jobWorkers = [];
-    mockStore.jobWorkers.push(newWorker);
-    recordAuditLog('CREATE_JOB_WORKER', `Created job worker: ${newWorker.name}`, newWorker, req.user?.email);
+    const existingIdx = mockStore.jobWorkers.findIndex((w: any) => w.id === createdWorker.id);
+    if (existingIdx >= 0) {
+      mockStore.jobWorkers[existingIdx] = createdWorker;
+    } else {
+      mockStore.jobWorkers.push(createdWorker);
+    }
+
+    recordAuditLog('CREATE_JOB_WORKER', `Created job worker: ${createdWorker.name}`, createdWorker, req.user?.email);
     saveMockStore();
 
-    res.status(201).json({ success: true, worker: newWorker });
+    res.status(201).json({ success: true, worker: createdWorker });
   } catch (err: any) {
     res.status(500).json({ error: 'Failed to create job worker', message: err.message });
   }
@@ -171,7 +345,7 @@ export const createJobWorker = async (req: Request, res: Response) => {
 // 2. Outward Material Dispatch (Warehouse -> Job Worker)
 export const getMaterialOutward = async (req: Request, res: Response) => {
   try {
-    const tenantId = getTenantId(req);
+    const tenantId = await getTenantId(req);
     const outward = (mockStore.jobWorkMaterialOutward || []).filter(
       (o) => !o.tenant_id || o.tenant_id === tenantId || o.tenant_id === 'shri-hari-pack'
     );
@@ -183,7 +357,7 @@ export const getMaterialOutward = async (req: Request, res: Response) => {
 
 export const createMaterialOutward = async (req: Request, res: Response) => {
   try {
-    const tenantId = getTenantId(req);
+    const tenantId = await getTenantId(req);
     const { vendorId, materialId, sourceBatchId, quantityKg, vehicleNumber, dispatchDate, notes } = req.body;
 
     const qty = Number(quantityKg);
@@ -191,7 +365,7 @@ export const createMaterialOutward = async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'Vendor, raw material, and a positive quantity greater than 0 are required.' });
     }
 
-    const vendor = (mockStore.jobWorkers || []).find((w) => w.id === vendorId);
+    const vendor = await findJobWorkerOrSupplier(vendorId, tenantId);
     if (!vendor) {
       return res.status(404).json({ error: 'Job worker vendor not found' });
     }
@@ -295,11 +469,9 @@ export const createMaterialOutward = async (req: Request, res: Response) => {
 // 3. Real-Time Stock Held with Each Job Worker
 export const getVendorStockBalances = async (req: Request, res: Response) => {
   try {
-    const tenantId = getTenantId(req);
+    const tenantId = await getTenantId(req);
 
-    const workers = (mockStore.jobWorkers || []).filter(
-      (w) => !w.tenant_id || w.tenant_id === tenantId || w.tenant_id === 'shri-hari-pack'
-    );
+    const workers = await fetchWorkersAndSuppliers(tenantId);
     const outwardList = (mockStore.jobWorkMaterialOutward || []).filter(
       (o) => !o.tenant_id || o.tenant_id === tenantId || o.tenant_id === 'shri-hari-pack'
     );
@@ -375,7 +547,7 @@ export const getVendorStockBalances = async (req: Request, res: Response) => {
 // 4. Job Work Production Orders
 export const getJobWorkOrders = async (req: Request, res: Response) => {
   try {
-    const tenantId = getTenantId(req);
+    const tenantId = await getTenantId(req);
     const orders = (mockStore.jobWorkOrders || []).filter(
       (o) => !o.tenant_id || o.tenant_id === tenantId || o.tenant_id === 'shri-hari-pack'
     );
@@ -387,7 +559,7 @@ export const getJobWorkOrders = async (req: Request, res: Response) => {
 
 export const createJobWorkOrder = async (req: Request, res: Response) => {
   try {
-    const tenantId = getTenantId(req);
+    const tenantId = await getTenantId(req);
     const {
       vendorId,
       productId,
@@ -406,7 +578,7 @@ export const createJobWorkOrder = async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'Vendor, target product, and positive planned quantity are required.' });
     }
 
-    const vendor = (mockStore.jobWorkers || []).find((w) => w.id === vendorId);
+    const vendor = await findJobWorkerOrSupplier(vendorId, tenantId);
     if (!vendor) {
       return res.status(404).json({ error: 'Job worker vendor not found' });
     }
@@ -554,7 +726,7 @@ export const createJobWorkOrder = async (req: Request, res: Response) => {
 // 5. Receive Finished Goods (Inward to Warehouse Stock OR Direct Customer Dispatch)
 export const receiveJobWorkFinishedGoods = async (req: Request, res: Response) => {
   try {
-    const tenantId = getTenantId(req);
+    const tenantId = await getTenantId(req);
     const orderId = req.body.jobWorkOrderId || req.body.orderId;
     const acceptedKg = Number(req.body.acceptedQuantityKg);
     const scrapKg = Number(req.body.scrapQuantityKg) || 0;
@@ -573,7 +745,7 @@ export const receiveJobWorkFinishedGoods = async (req: Request, res: Response) =
       return res.status(404).json({ error: 'Job work order not found' });
     }
 
-    const vendor = (mockStore.jobWorkers || []).find((w) => w.id === order.vendor_id);
+    const vendor = await findJobWorkerOrSupplier(order.vendor_id, tenantId);
     const totalInputConsumed = acceptedKg + scrapKg;
 
     // Resolve recipe formulation items for raw materials consumed deduction
@@ -833,7 +1005,7 @@ export const receiveJobWorkFinishedGoods = async (req: Request, res: Response) =
 
 export const getJobWorkReceipts = async (req: Request, res: Response) => {
   try {
-    const tenantId = getTenantId(req);
+    const tenantId = await getTenantId(req);
     const receipts = (mockStore.jobWorkReceipts || []).filter(
       (r) => !r.tenant_id || r.tenant_id === tenantId || r.tenant_id === 'shri-hari-pack'
     );
