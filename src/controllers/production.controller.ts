@@ -193,7 +193,12 @@ export const createProductionBatch = async (req: Request, res: Response) => {
           const mOrd = inMemOrders.find((o) => o.id === sp.orderId);
           if (mOrd) {
             mOrd.status = 'in_production';
-            if (mOrd.customer_order_items?.[0]) mOrd.customer_order_items[0].status = 'in_production';
+            if (sp.orderItemId) {
+              const targetItem = mOrd.customer_order_items?.find((it: any) => it.id === sp.orderItemId);
+              if (targetItem) targetItem.status = 'in_production';
+            } else if (mOrd.customer_order_items?.[0]) {
+              mOrd.customer_order_items[0].status = 'in_production';
+            }
           }
         });
       }
