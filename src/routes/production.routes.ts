@@ -12,7 +12,9 @@ const router = Router();
 router.use(authenticateToken);
 
 router.get('/', getProductionBatches);
+router.get('/batches', getProductionBatches);
 router.post('/', requireRole('factory_admin', 'supervisor', 'operator'), createProductionBatch);
+router.post('/batches', requireRole('factory_admin', 'supervisor', 'operator'), createProductionBatch);
 router.post('/:batchId/confirm', requireRole('factory_admin', 'supervisor', 'operator'), confirmProductionBatch);
 router.patch('/:batchId/operator', requireRole('factory_admin', 'supervisor', 'operator'), updateProductionBatchOperator);
 
