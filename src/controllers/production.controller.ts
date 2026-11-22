@@ -153,6 +153,10 @@ export const createProductionBatch = async (req: Request, res: Response) => {
       const recipe =
         prod?.product_recipes?.find((r) => r.id === body.recipeId) || prod?.product_recipes?.[0];
 
+      const resolvedSizeMicron = body.isSlittingBatch
+        ? (body.sizeMicron?.trim() || 'Standard')
+        : ((orderItem as any)?.size_micron?.trim() || body.sizeMicron?.trim() || (ord as any).size_micron || 'Standard');
+
       const newBatch: InMemProductionBatch = {
         id: `pb-${Date.now()}`,
         tenant_id: tenantId,
@@ -162,7 +166,7 @@ export const createProductionBatch = async (req: Request, res: Response) => {
         recipe_id: recipe?.id || body.recipeId || 'rec-default',
         batch_number: resolvedBatchNumber,
         planned_quantity_kg: body.plannedQuantityKg,
-        size_micron: body.sizeMicron || (ord as any).size_micron || 'Standard',
+        size_micron: resolvedSizeMicron,
         is_slitting_batch: body.isSlittingBatch || false,
         slitting_plan: body.slittingPlan || [],
         status: 'draft',
@@ -211,13 +215,18 @@ export const createProductionBatch = async (req: Request, res: Response) => {
     // Verify order item
     const { data: orderItem, error: oiErr } = await supabase
       .from('customer_order_items')
-      .select('id, product_id, requested_quantity_kg, produced_quantity_kg')
+      .select('id, product_id, requested_quantity_kg, produced_quantity_kg, size_micron')
       .eq('id', body.orderItemId)
       .single();
 
     if (oiErr || !orderItem) {
       return res.status(404).json({ success: false, message: 'Order item not found' });
     }
+
+    // Resolve size micron: for single order runs, prioritize line item spec or passed spec
+    const resolvedSizeMicron = body.isSlittingBatch
+      ? (body.sizeMicron?.trim() || 'Standard')
+      : ((orderItem as any).size_micron?.trim() || body.sizeMicron?.trim() || 'Standard');
 
     // Create production batch in draft state
     const { data: batch, error: pbErr } = await supabase
@@ -230,7 +239,7 @@ export const createProductionBatch = async (req: Request, res: Response) => {
         recipe_id: body.recipeId || null,
         batch_number: resolvedBatchNumber,
         planned_quantity_kg: body.plannedQuantityKg,
-        size_micron: body.sizeMicron || null,
+        size_micron: resolvedSizeMicron,
         is_slitting_batch: body.isSlittingBatch || false,
         slitting_plan: body.slittingPlan || [],
         status: 'draft',
